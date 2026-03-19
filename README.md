@@ -46,6 +46,7 @@ codex-tts -- --no-alt-screen
 ```bash
 codex-tts --speed 1.5 -- --no-alt-screen
 codex-tts --rate 260 --voice Tingting -- --no-alt-screen
+codex-tts --preset ultra -- --no-alt-screen
 ```
 
 查看当前系统可用音色：
@@ -72,9 +73,10 @@ codex-tts --config ~/.codex-tts/config.toml -- --no-alt-screen
 - `--voice`: 本次运行覆盖配置文件中的音色
 - `--rate`: 本次运行直接指定绝对语速
 - `--speed`: 本次运行按倍率调整当前配置语速，例如 `1.5`
+- `--preset`: 本次运行使用语速预设，当前支持 `normal`、`fast`、`faster`、`ultra`
 - `--list-voices`: 列出当前后端支持的系统音色并退出
 
-`--rate` 和 `--speed` 不能同时使用；如果都不传，就沿用配置文件或默认值。
+`--rate`、`--speed` 和 `--preset` 不能同时使用；如果都不传，就沿用配置文件或默认值。
 
 ## 配置
 

@@ -7,6 +7,13 @@ from codex_tts.config import default_config_path, load_config
 from codex_tts.service import run_session
 from codex_tts.tts import list_voices
 
+PRESET_RATES = {
+    "normal": 180,
+    "fast": 270,
+    "faster": 360,
+    "ultra": 540,
+}
+
 
 def positive_float(value: str) -> float:
     parsed = float(value)
@@ -53,6 +60,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=positive_float,
         help="Multiply the configured speech rate for this run.",
     )
+    speed_group.add_argument(
+        "--preset",
+        choices=sorted(PRESET_RATES),
+        help="Apply a named speech-rate preset for this run.",
+    )
     parser.add_argument(
         "--list-voices",
         action="store_true",
@@ -72,6 +84,8 @@ def merge_config(config, args):
         merged = replace(merged, voice=args.voice)
     if args.rate is not None:
         merged = replace(merged, rate=args.rate)
+    elif args.preset is not None:
+        merged = replace(merged, rate=PRESET_RATES[args.preset])
     elif args.speed is not None:
         merged = replace(merged, rate=max(1, round(merged.rate * args.speed)))
     return merged

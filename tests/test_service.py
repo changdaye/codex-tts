@@ -25,6 +25,16 @@ def test_parser_rejects_rate_and_speed_together():
         raise AssertionError("expected parser to reject --rate with --speed")
 
 
+def test_parser_rejects_preset_with_speed():
+    parser = build_parser()
+    try:
+        parser.parse_args(["--preset", "ultra", "--speed", "1.5"])
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("expected parser to reject --preset with --speed")
+
+
 def test_build_backend_returns_say_backend():
     backend = build_backend("say")
     assert backend.__class__.__name__ == "SayBackend"
@@ -52,6 +62,15 @@ def test_merge_config_applies_absolute_rate_override():
     config = merge_config(AppConfig(rate=180), args)
 
     assert config.rate == 240
+
+
+def test_merge_config_applies_preset_rate_override():
+    parser = build_parser()
+    args = parser.parse_args(["--preset", "ultra"])
+
+    config = merge_config(AppConfig(rate=180), args)
+
+    assert config.rate == 540
 
 
 def test_main_invokes_service_with_loaded_config(monkeypatch, tmp_path):
@@ -84,6 +103,36 @@ def test_main_invokes_service_with_loaded_config(monkeypatch, tmp_path):
     assert captured["cmd"] == ["/usr/local/bin/codex", "--no-alt-screen"]
     assert captured["config"] == AppConfig()
     assert captured["state_db"].name == "state_5.sqlite"
+
+
+def test_main_invokes_service_with_preset_override(monkeypatch, tmp_path):
+    captured = {}
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr("codex_tts.cli.shutil.which", lambda name: "/usr/local/bin/codex")
+    monkeypatch.setattr(
+        "codex_tts.cli.load_config",
+        lambda path: AppConfig(rate=180) if path == config_path else None,
+    )
+    monkeypatch.setattr(
+        "codex_tts.cli.run_session",
+        lambda cmd, config, state_db, home_dir, cwd: captured.update(
+            {
+                "cmd": cmd,
+                "config": config,
+                "state_db": state_db,
+                "home_dir": home_dir,
+                "cwd": cwd,
+            }
+        )
+        or 0,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = main(["--config", str(config_path), "--preset", "faster", "--", "--no-alt-screen"])
+
+    assert exit_code == 0
+    assert captured["config"].rate == 360
 
 
 def test_main_lists_voices_without_starting_codex(monkeypatch, capsys):
