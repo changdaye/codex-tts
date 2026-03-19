@@ -67,7 +67,12 @@ class FakeEnvironment:
     cwd: Path
 
     @classmethod
-    def create(cls, tmp_path: Path) -> "FakeEnvironment":
+    def create(
+        cls,
+        tmp_path: Path,
+        *,
+        final_text: str = "final reply",
+    ) -> "FakeEnvironment":
         home_dir = tmp_path / "home"
         home_dir.mkdir()
         cwd = tmp_path / "workspace"
@@ -98,7 +103,7 @@ class FakeEnvironment:
             str(rollout_path),
             str(cwd),
             "thread-1",
-            "final reply",
+            final_text,
         ]
         return cls(
             codex_cmd=codex_cmd,
@@ -148,3 +153,37 @@ def test_run_session_ignores_speech_backend_failures(tmp_path, monkeypatch):
     )
     exit_code = run_session(fake.codex_cmd, fake.config, fake.state_db, fake.home_dir, fake.cwd)
     assert exit_code == 0
+
+
+def test_run_session_waits_for_delayed_final_answer(tmp_path, monkeypatch):
+    fake = FakeEnvironment.create(
+        tmp_path,
+        final_text='[{"delay": 5.2, "text": "delayed reply"}]',
+    )
+    spoken: list[str] = []
+    monkeypatch.setattr(
+        "codex_tts.service.speak_text",
+        lambda text, config: spoken.append(text),
+    )
+
+    exit_code = run_session(fake.codex_cmd, fake.config, fake.state_db, fake.home_dir, fake.cwd)
+
+    assert exit_code == 0
+    assert spoken == ["delayed reply"]
+
+
+def test_run_session_speaks_each_new_final_answer(tmp_path, monkeypatch):
+    fake = FakeEnvironment.create(
+        tmp_path,
+        final_text='[{"delay": 0.0, "text": "first reply"}, {"delay": 0.1, "text": "second reply"}]',
+    )
+    spoken: list[str] = []
+    monkeypatch.setattr(
+        "codex_tts.service.speak_text",
+        lambda text, config: spoken.append(text),
+    )
+
+    exit_code = run_session(fake.codex_cmd, fake.config, fake.state_db, fake.home_dir, fake.cwd)
+
+    assert exit_code == 0
+    assert spoken == ["first reply", "second reply"]
