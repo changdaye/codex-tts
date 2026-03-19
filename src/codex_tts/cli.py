@@ -1,4 +1,7 @@
 import argparse
+from pathlib import Path
+
+from codex_tts.config import default_config_path
 
 
 class CodexTTSArgumentParser(argparse.ArgumentParser):
@@ -11,6 +14,12 @@ class CodexTTSArgumentParser(argparse.ArgumentParser):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = CodexTTSArgumentParser(prog="codex-tts")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=default_config_path(),
+        help="Path to the codex-tts config file.",
+    )
     parser.add_argument("codex_args", nargs=argparse.REMAINDER)
     return parser
 
