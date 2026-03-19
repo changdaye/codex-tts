@@ -24,16 +24,23 @@ final class MenuBarViewModel: ObservableObject {
         snapshot?.globalEnabled ?? false
     }
 
+    var controlsEnabled: Bool {
+        isReachable && snapshot != nil
+    }
+
     var focusSessionID: String? {
         snapshot?.focusSessionID
     }
 
-    func refresh() {
+    func refresh(clearError: Bool = true) {
         do {
             snapshot = try client.fetchStatus()
             isReachable = true
-            errorMessage = nil
+            if clearError {
+                errorMessage = nil
+            }
         } catch {
+            snapshot = nil
             isReachable = false
             errorMessage = error.localizedDescription
         }
@@ -72,6 +79,7 @@ final class MenuBarViewModel: ObservableObject {
             refresh()
         } catch {
             errorMessage = error.localizedDescription
+            refresh(clearError: false)
         }
     }
 }

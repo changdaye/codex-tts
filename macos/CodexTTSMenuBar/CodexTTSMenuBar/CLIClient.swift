@@ -12,15 +12,23 @@ protocol CLIExecuting {
 
 struct ProcessCLIExecutor: CLIExecuting {
     let executable: String
+    let environment: [String: String]
+    let fileManager: FileManager
 
-    init(executable: String = "codex-tts") {
+    init(
+        executable: String = "codex-tts",
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        fileManager: FileManager = .default
+    ) {
         self.executable = executable
+        self.environment = environment
+        self.fileManager = fileManager
     }
 
     func run(arguments: [String]) throws -> CommandOutput {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [executable] + arguments
+        process.executableURL = URL(fileURLWithPath: try resolveExecutable())
+        process.arguments = arguments
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
@@ -40,12 +48,66 @@ struct ProcessCLIExecutor: CLIExecuting {
         }
         return output
     }
+
+    private func resolveExecutable() throws -> String {
+        if executable.contains("/") {
+            guard fileManager.isExecutableFile(atPath: executable) else {
+                throw CLIClientError.executableNotFound([executable])
+            }
+            return executable
+        }
+
+        let override = environment["CODEX_TTS_EXECUTABLE"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let override, !override.isEmpty {
+            guard fileManager.isExecutableFile(atPath: override) else {
+                throw CLIClientError.executableNotFound([override])
+            }
+            return override
+        }
+
+        let searchDirectories = candidateSearchDirectories()
+        let candidates = searchDirectories.map {
+            URL(fileURLWithPath: $0, isDirectory: true).appendingPathComponent(executable).path
+        }
+        if let resolved = candidates.first(where: { fileManager.isExecutableFile(atPath: $0) }) {
+            return resolved
+        }
+        throw CLIClientError.executableNotFound(candidates)
+    }
+
+    private func candidateSearchDirectories() -> [String] {
+        var directories: [String] = []
+        if let pathValue = environment["PATH"] {
+            directories.append(contentsOf: pathValue.split(separator: ":").map(String.init))
+        }
+
+        let homeDirectory = environment["HOME"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedHome = (homeDirectory?.isEmpty == false)
+            ? homeDirectory!
+            : fileManager.homeDirectoryForCurrentUser.path
+        directories.append(contentsOf: [
+            "\(resolvedHome)/.local/bin",
+            "\(resolvedHome)/bin",
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin",
+        ])
+
+        var seen = Set<String>()
+        return directories.filter { directory in
+            guard !directory.isEmpty else {
+                return false
+            }
+            return seen.insert(directory).inserted
+        }
+    }
 }
 
 enum CLIClientError: LocalizedError {
     case emptyOutput
     case invalidStatusJSON(String)
     case commandFailed(CommandOutput)
+    case executableNotFound([String])
 
     var errorDescription: String? {
         switch self {
@@ -56,6 +118,9 @@ enum CLIClientError: LocalizedError {
         case .commandFailed(let output):
             let message = output.stderr.isEmpty ? output.stdout : output.stderr
             return "codex-tts command failed: \(message.trimmingCharacters(in: .whitespacesAndNewlines))"
+        case .executableNotFound(let candidates):
+            let joined = candidates.joined(separator: ", ")
+            return "Could not find codex-tts. Checked: \(joined)"
         }
     }
 }

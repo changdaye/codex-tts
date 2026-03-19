@@ -29,6 +29,7 @@ private struct MenuContentView: View {
                 get: { viewModel.globalEnabled },
                 set: { viewModel.setGlobalEnabled($0) }
             ))
+            .disabled(!viewModel.controlsEnabled)
             Divider()
             sessionsSection
             Divider()
@@ -64,7 +65,10 @@ private struct MenuContentView: View {
 
     @ViewBuilder
     private var sessionsSection: some View {
-        if viewModel.sessions.isEmpty {
+        if !viewModel.controlsEnabled {
+            Text("Session list unavailable while daemon is disconnected")
+                .foregroundStyle(.secondary)
+        } else if viewModel.sessions.isEmpty {
             Text("No active sessions")
                 .foregroundStyle(.secondary)
         } else {
@@ -80,11 +84,12 @@ private struct MenuContentView: View {
                         Button(session.isFocus ? "Focused" : "Focus") {
                             viewModel.focus(sessionID: session.sessionID)
                         }
-                        .disabled(session.isFocus)
+                        .disabled(session.isFocus || !viewModel.controlsEnabled)
 
                         Button(session.isMuted ? "Unmute" : "Mute") {
                             viewModel.setMuted(sessionID: session.sessionID, muted: !session.isMuted)
                         }
+                        .disabled(!viewModel.controlsEnabled)
                     }
                     if let lastFinalText = session.lastFinalText, !lastFinalText.isEmpty {
                         Text(lastFinalText)
