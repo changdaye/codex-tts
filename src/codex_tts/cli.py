@@ -1,11 +1,19 @@
 import argparse
 from dataclasses import replace
+import json
+import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
+import time
+import uuid
 
-from codex_tts.config import default_config_path, load_config
+from codex_tts.config import AppConfig, daemon_socket_path, daemon_state_path, default_config_path, load_config
+from codex_tts.daemon import CodexTTSDaemon
+from codex_tts.ipc import call_daemon
 from codex_tts.service import run_session
+from codex_tts.session_store import list_thread_ids
 from codex_tts.tts import list_voices
 
 PRESET_RATES = {
@@ -100,6 +108,10 @@ def merge_config(config, args):
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] in {"launch", "status", "focus", "mute", "unmute", "enable", "disable", "daemon"}:
+        return run_command(argv)
+
     args = build_parser().parse_args(argv)
     try:
         config = merge_config(load_config(args.config), args)
@@ -118,7 +130,123 @@ def main(argv: list[str] | None = None) -> int:
     home_dir = Path.home()
     state_db = home_dir / ".codex" / "state_5.sqlite"
     codex_cmd = build_codex_command(args.codex_args, codex_binary=codex_binary)
-    return run_session(codex_cmd, config, state_db, home_dir, Path.cwd())
+    return launch_codex_session(codex_cmd, config, state_db, home_dir, Path.cwd())
+
+
+def run_command(argv: list[str]) -> int:
+    command = argv[0]
+    if command == "launch":
+        return main(argv[1:])
+    if command == "status":
+        return _run_status_command(argv[1:])
+    if command == "focus":
+        return _run_session_id_command(argv[1:], daemon_command="set_focus")
+    if command == "mute":
+        return _run_session_id_command(argv[1:], daemon_command="mute_session")
+    if command == "unmute":
+        return _run_session_id_command(argv[1:], daemon_command="unmute_session")
+    if command == "enable":
+        return _set_global_enabled(True)
+    if command == "disable":
+        return _set_global_enabled(False)
+    if command == "daemon":
+        return _run_daemon_command(argv[1:])
+    raise RuntimeError(f"unknown command: {command}")
+
+
+def launch_codex_session(
+    codex_cmd: list[str],
+    config: AppConfig,
+    state_db: Path,
+    home_dir: Path,
+    cwd: Path,
+) -> int:
+    try:
+        call_daemon(daemon_socket_path(), {"command": "ping"})
+    except OSError:
+        return run_session(codex_cmd, config, state_db, home_dir, cwd)
+
+    started_at = int(time.time())
+    known_thread_ids = sorted(list_thread_ids(state_db))
+    env = os.environ.copy()
+    env["HOME"] = str(home_dir)
+    process = subprocess.Popen(codex_cmd, cwd=str(cwd), env=env)
+    call_daemon(
+        daemon_socket_path(),
+        {
+            "command": "register_launch",
+            "session_id": uuid.uuid4().hex,
+            "cwd": str(cwd),
+            "started_at": started_at,
+            "launcher_pid": os.getpid(),
+            "codex_pid": process.pid,
+            "known_thread_ids": known_thread_ids,
+        },
+    )
+    return process.wait()
+
+
+def _run_status_command(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="codex-tts status")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args(argv)
+
+    response = call_daemon(daemon_socket_path(), {"command": "status"})
+    snapshot = response["snapshot"]
+    if args.json:
+        print(json.dumps(snapshot))
+    else:
+        print(
+            f"focus={snapshot['focus_session_id']} sessions={len(snapshot['sessions'])} enabled={snapshot['global_enabled']}"
+        )
+    return 0
+
+
+def _run_session_id_command(argv: list[str], *, daemon_command: str) -> int:
+    parser = argparse.ArgumentParser(prog=f"codex-tts {daemon_command}")
+    parser.add_argument("session_id")
+    args = parser.parse_args(argv)
+    call_daemon(
+        daemon_socket_path(),
+        {
+            "command": daemon_command,
+            "session_id": args.session_id,
+        },
+    )
+    return 0
+
+
+def _set_global_enabled(enabled: bool) -> int:
+    call_daemon(
+        daemon_socket_path(),
+        {
+            "command": "set_global_enabled",
+            "enabled": enabled,
+        },
+    )
+    return 0
+
+
+def _run_daemon_command(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="codex-tts daemon")
+    parser.add_argument("action", choices=["run"])
+    parser.add_argument("--config", type=Path, default=default_config_path())
+    args = parser.parse_args(argv)
+
+    try:
+        config = load_config(args.config)
+    except ValueError as exc:
+        print(f"codex-tts: invalid config: {exc}", file=sys.stderr)
+        return 2
+
+    daemon = CodexTTSDaemon(
+        config=config,
+        state_db=Path.home() / ".codex" / "state_5.sqlite",
+        socket_path=daemon_socket_path(),
+        settings_path=daemon_state_path(),
+    )
+    daemon.serve_forever()
+    return 0
 
 
 if __name__ == "__main__":

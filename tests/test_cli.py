@@ -1,4 +1,5 @@
 import argparse
+import json
 import runpy
 import sys
 
@@ -51,3 +52,84 @@ def test_build_parser_keeps_default_config_path_under_codex_tts_home(monkeypatch
     args = build_parser().parse_args([])
 
     assert args.config == tmp_path / ".codex-tts" / "config.toml"
+
+
+def test_main_launch_command_uses_launch_mode(monkeypatch, tmp_path):
+    captured = {}
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr("codex_tts.cli.shutil.which", lambda name: "/usr/local/bin/codex")
+    monkeypatch.setattr("codex_tts.cli.load_config", lambda path: AppConfig())
+    monkeypatch.setattr(
+        "codex_tts.cli.launch_codex_session",
+        lambda codex_cmd, config, state_db, home_dir, cwd: captured.update(
+            {
+                "cmd": codex_cmd,
+                "config": config,
+                "state_db": state_db,
+                "home_dir": home_dir,
+                "cwd": cwd,
+            }
+        )
+        or 0,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = main(["launch", "--config", str(config_path), "--", "--no-alt-screen"])
+
+    assert exit_code == 0
+    assert captured["cmd"] == ["/usr/local/bin/codex", "--no-alt-screen"]
+
+
+def test_main_status_json_prints_daemon_snapshot(monkeypatch, capsys):
+    monkeypatch.setattr(
+        "codex_tts.cli.call_daemon",
+        lambda path, request: {
+            "ok": True,
+            "snapshot": {
+                "global_enabled": True,
+                "focus_session_id": "session-1",
+                "sessions": [],
+            },
+        },
+    )
+
+    exit_code = main(["status", "--json"])
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "global_enabled": True,
+        "focus_session_id": "session-1",
+        "sessions": [],
+    }
+
+
+def test_launch_falls_back_to_direct_mode_when_daemon_unavailable(monkeypatch, tmp_path):
+    captured = {}
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr("codex_tts.cli.shutil.which", lambda name: "/usr/local/bin/codex")
+    monkeypatch.setattr("codex_tts.cli.load_config", lambda path: AppConfig())
+    monkeypatch.setattr(
+        "codex_tts.cli.call_daemon",
+        lambda path, request: (_ for _ in ()).throw(FileNotFoundError("missing socket")),
+    )
+    monkeypatch.setattr(
+        "codex_tts.cli.run_session",
+        lambda codex_cmd, config, state_db, home_dir, cwd: captured.update(
+            {
+                "cmd": codex_cmd,
+                "config": config,
+                "state_db": state_db,
+                "home_dir": home_dir,
+                "cwd": cwd,
+            }
+        )
+        or 0,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = main(["launch", "--config", str(config_path), "--", "--no-alt-screen"])
+
+    assert exit_code == 0
+    assert captured["cmd"] == ["/usr/local/bin/codex", "--no-alt-screen"]
