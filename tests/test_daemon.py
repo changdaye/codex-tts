@@ -79,6 +79,83 @@ def test_daemon_set_focus_updates_snapshot(tmp_path):
     assert response["snapshot"]["focus_session_id"] == "session-1"
 
 
+def test_daemon_ping_and_unknown_command_responses(tmp_path):
+    state_db = tmp_path / "state.sqlite"
+    create_threads_db(state_db)
+    daemon = CodexTTSDaemon(
+        config=AppConfig(),
+        state_db=state_db,
+        socket_path=tmp_path / "daemon.sock",
+        settings_path=tmp_path / "daemon-state.json",
+    )
+
+    assert daemon.handle_request({"command": "ping"}) == {"ok": True}
+    assert daemon.handle_request({"command": "mystery"}) == {
+        "ok": False,
+        "error": "unknown command: mystery",
+    }
+
+
+def test_daemon_can_mute_unmute_clear_focus_and_toggle_global_enabled(tmp_path, monkeypatch):
+    state_db = tmp_path / "state.sqlite"
+    create_threads_db(state_db)
+    daemon = CodexTTSDaemon(
+        config=AppConfig(),
+        state_db=state_db,
+        socket_path=tmp_path / "daemon.sock",
+        settings_path=tmp_path / "daemon-state.json",
+    )
+    daemon.handle_request(
+        {
+            "command": "register_launch",
+            "session_id": "session-1",
+            "cwd": str(tmp_path / "workspace"),
+            "started_at": 100,
+            "known_thread_ids": [],
+        }
+    )
+    daemon.handle_request({"command": "set_focus", "session_id": "session-1"})
+    monkeypatch.setattr("codex_tts.daemon.time.time", lambda: 456)
+
+    muted = daemon.handle_request({"command": "mute_session", "session_id": "session-1"})
+    unmuted = daemon.handle_request({"command": "unmute_session", "session_id": "session-1"})
+    disabled = daemon.handle_request({"command": "set_global_enabled", "enabled": False})
+    cleared = daemon.handle_request({"command": "set_focus"})
+
+    assert muted["session"]["is_muted"] is True
+    assert unmuted["session"]["is_muted"] is False
+    assert disabled["snapshot"]["global_enabled"] is False
+    assert cleared["snapshot"]["focus_session_id"] is None
+    assert daemon.store.load().global_enabled is False
+    assert daemon.store.load().updated_at == 456
+
+
+def test_daemon_ignores_missing_bind_target_and_missing_active_watcher(tmp_path):
+    state_db = tmp_path / "state.sqlite"
+    create_threads_db(state_db)
+    daemon = CodexTTSDaemon(
+        config=AppConfig(),
+        state_db=state_db,
+        socket_path=tmp_path / "daemon.sock",
+        settings_path=tmp_path / "daemon-state.json",
+    )
+    daemon.session_manager.register_launch(
+        session_id="session-1",
+        cwd=str(tmp_path / "workspace"),
+        started_at=100,
+    )
+    daemon.session_manager.bind_session(
+        "session-1",
+        thread_id="thread-1",
+        rollout_path=tmp_path / "thread-1.jsonl",
+    )
+
+    daemon._attempt_bind("missing")
+    daemon._poll_active_session("session-1")
+
+    assert daemon.session_manager.status_snapshot().sessions[0].session_id == "session-1"
+
+
 def test_daemon_tracks_two_sessions_but_only_speaks_focused_one(tmp_path, monkeypatch):
     state_db = tmp_path / "state.sqlite"
     create_threads_db(state_db)

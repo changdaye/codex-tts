@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from codex_tts.session_manager import SessionManager
 
 
@@ -68,3 +70,37 @@ def test_muted_session_cannot_speak_even_when_focused(tmp_path):
     manager.set_muted("session-1", muted=True)
 
     assert manager.should_speak("session-1") is False
+
+
+def test_focus_can_be_cleared_explicitly(tmp_path):
+    manager = SessionManager()
+    manager.register_launch(session_id="session-1", cwd=str(tmp_path / "one"), started_at=100)
+    manager.bind_session("session-1", thread_id="thread-1", rollout_path=tmp_path / "one.jsonl")
+
+    cleared = manager.set_focus(None)
+
+    assert cleared is None
+    assert manager.status_snapshot().focus_session_id is None
+
+
+def test_global_disable_prevents_speech_for_focused_session(tmp_path):
+    manager = SessionManager()
+    manager.register_launch(session_id="session-1", cwd=str(tmp_path / "one"), started_at=100)
+    manager.bind_session("session-1", thread_id="thread-1", rollout_path=tmp_path / "one.jsonl")
+
+    manager.set_global_enabled(False)
+
+    assert manager.should_speak("session-1") is False
+
+
+def test_unknown_session_never_speaks():
+    manager = SessionManager()
+
+    assert manager.should_speak("missing") is False
+
+
+def test_muting_unknown_session_raises_clear_error():
+    manager = SessionManager()
+
+    with pytest.raises(KeyError, match="unknown session: missing"):
+        manager.set_muted("missing", muted=True)

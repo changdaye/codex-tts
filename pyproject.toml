@@ -10,7 +10,7 @@ readme = "README.md"
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=9.0"]
+dev = ["coverage>=7.0", "pytest>=9.0"]
 
 [project.scripts]
 codex-tts = "codex_tts.cli:main"
@@ -20,3 +20,10 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.coverage.run]
+source = ["src/codex_tts"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
