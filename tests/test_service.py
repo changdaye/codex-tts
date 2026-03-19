@@ -9,6 +9,27 @@ from codex_tts.service import run_session
 from codex_tts.tts import build_backend
 
 
+def insert_thread_record(
+    db_path: Path,
+    *,
+    thread_id: str,
+    rollout_path: Path,
+    created_at: int,
+    updated_at: int,
+    cwd: str,
+) -> None:
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        insert into threads (id, rollout_path, created_at, updated_at, cwd)
+        values (?, ?, ?, ?, ?)
+        """,
+        (thread_id, str(rollout_path), created_at, updated_at, cwd),
+    )
+    conn.commit()
+    conn.close()
+
+
 def test_parser_accepts_passthrough_args():
     parser = build_parser()
     args = parser.parse_args(["--", "--no-alt-screen"])
@@ -267,6 +288,55 @@ def test_run_session_skips_speech_when_no_thread_matches(tmp_path, monkeypatch):
         lambda text, config: spoken.append(text),
     )
     exit_code = run_session(fake.codex_cmd, fake.config, fake.state_db, fake.home_dir, fake.cwd)
+    assert exit_code == 0
+    assert spoken == []
+
+
+def test_run_session_skips_speech_when_thread_candidates_are_ambiguous(tmp_path, monkeypatch):
+    fake = FakeEnvironment.create(tmp_path)
+    rollout_one = tmp_path / "ambiguous-1.jsonl"
+    rollout_two = tmp_path / "ambiguous-2.jsonl"
+    rollout_one.write_text(
+        '{"type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"wrong one"}]}}\n',
+        encoding="utf-8",
+    )
+    rollout_two.write_text(
+        '{"type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"wrong two"}]}}\n',
+        encoding="utf-8",
+    )
+    insert_thread_record(
+        fake.state_db,
+        thread_id="thread-a",
+        rollout_path=rollout_one,
+        created_at=1001,
+        updated_at=1002,
+        cwd=str(fake.cwd),
+    )
+    insert_thread_record(
+        fake.state_db,
+        thread_id="thread-b",
+        rollout_path=rollout_two,
+        created_at=1001,
+        updated_at=1002,
+        cwd=str(fake.cwd),
+    )
+
+    spoken: list[str] = []
+    monkeypatch.setattr("codex_tts.service.list_thread_ids", lambda path: set())
+    monkeypatch.setattr("codex_tts.service.time.time", lambda: 1000)
+    monkeypatch.setattr(
+        "codex_tts.service.speak_text",
+        lambda text, config: spoken.append(text),
+    )
+
+    exit_code = run_session(
+        [sys.executable, "-c", "import time; time.sleep(0.01)"],
+        fake.config,
+        fake.state_db,
+        fake.home_dir,
+        fake.cwd,
+    )
+
     assert exit_code == 0
     assert spoken == []
 
