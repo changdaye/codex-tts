@@ -72,6 +72,18 @@ class SessionManager:
     def set_global_enabled(self, enabled: bool) -> None:
         self._global_enabled = enabled
 
+    def record_final_text(
+        self,
+        session_id: str,
+        *,
+        text: str,
+        event_at: int,
+    ) -> ManagedSessionSnapshot:
+        session = self._require_session(session_id)
+        session = replace(session, last_final_text=text, last_event_at=event_at)
+        self._sessions[session_id] = session
+        return session
+
     def mark_session_exited(self, session_id: str) -> ManagedSessionSnapshot:
         session = self._require_session(session_id)
         session = replace(session, status="exited", is_focus=False)
