@@ -15,3 +15,9 @@ def test_sanitize_for_speech_collapses_empty_lines_after_url_removal():
 
 def test_sanitize_for_speech_returns_empty_when_only_urls_remain():
     assert sanitize_for_speech("https://example.com/docs") == ""
+
+
+def test_sanitize_for_speech_preserves_trailing_punctuation_after_urls():
+    text = "See https://example.com/test... more"
+
+    assert sanitize_for_speech(text) == "See... more"

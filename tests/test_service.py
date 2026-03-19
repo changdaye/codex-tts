@@ -5,8 +5,31 @@ from pathlib import Path
 
 from codex_tts.cli import build_codex_command, build_parser, main, merge_config
 from codex_tts.config import AppConfig
+from codex_tts.diagnostics import DebugLogger
+from codex_tts.models import ParsedRolloutEvent, ThreadRecord
 from codex_tts.service import run_session
 from codex_tts.tts import build_backend
+
+
+def insert_thread_record(
+    db_path: Path,
+    *,
+    thread_id: str,
+    rollout_path: Path,
+    created_at: int,
+    updated_at: int,
+    cwd: str,
+) -> None:
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        insert into threads (id, rollout_path, created_at, updated_at, cwd)
+        values (?, ?, ?, ?, ?)
+        """,
+        (thread_id, str(rollout_path), created_at, updated_at, cwd),
+    )
+    conn.commit()
+    conn.close()
 
 
 def test_parser_accepts_passthrough_args():
@@ -35,9 +58,32 @@ def test_parser_rejects_preset_with_speed():
         raise AssertionError("expected parser to reject --preset with --speed")
 
 
+def test_parser_accepts_verbose_flag():
+    parser = build_parser()
+    args = parser.parse_args(["--verbose", "--", "--no-alt-screen"])
+    assert args.verbose is True
+    assert args.codex_args == ["--no-alt-screen"]
+
+
 def test_build_backend_returns_say_backend():
     backend = build_backend("say")
     assert backend.__class__.__name__ == "SayBackend"
+
+
+def test_speak_text_uses_selected_backend(monkeypatch):
+    calls = []
+
+    class FakeBackend:
+        def speak(self, text, *, voice, rate):
+            calls.append((text, voice, rate))
+
+    monkeypatch.setattr("codex_tts.service.build_backend", lambda name: FakeBackend())
+
+    from codex_tts.service import speak_text
+
+    speak_text("done", AppConfig(voice="Mei-Jia", rate=240))
+
+    assert calls == [("done", "Mei-Jia", 240)]
 
 
 def test_build_codex_command_prefixes_real_codex_binary():
@@ -150,6 +196,17 @@ def test_main_lists_voices_without_starting_codex(monkeypatch, capsys):
     assert capsys.readouterr().out == "Tingting\nMei-Jia\n"
 
 
+def test_main_prints_invalid_config_errors(monkeypatch, tmp_path, capsys):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("rate = 0\n", encoding="utf-8")
+    monkeypatch.setattr("codex_tts.cli.shutil.which", lambda name: "/usr/local/bin/codex")
+
+    exit_code = main(["--config", str(config_path)])
+
+    assert exit_code == 2
+    assert capsys.readouterr().err == "codex-tts: invalid config: rate must be greater than 0\n"
+
+
 @dataclass
 class FakeEnvironment:
     codex_cmd: list[str]
@@ -225,6 +282,24 @@ def test_run_session_speaks_final_answer_once(tmp_path, monkeypatch):
     assert spoken == ["final reply"]
 
 
+def test_handle_rollout_events_skips_non_final_policy_rejections(monkeypatch):
+    class FakeWatcher:
+        def poll(self):
+            return [ParsedRolloutEvent(kind="ignored", text="not final")]
+
+    spoken: list[str] = []
+    monkeypatch.setattr(
+        "codex_tts.service.speak_text",
+        lambda text, config: spoken.append(text),
+    )
+
+    from codex_tts.service import handle_rollout_events
+
+    handle_rollout_events(FakeWatcher(), policy=__import__("codex_tts.speech_policy", fromlist=["SpeechPolicy"]).SpeechPolicy(), config=AppConfig(verbose=True), logger=DebugLogger(enabled=True))
+
+    assert spoken == []
+
+
 def test_run_session_speaks_sanitized_final_answer(tmp_path, monkeypatch):
     fake = FakeEnvironment.create(
         tmp_path,
@@ -259,6 +334,30 @@ def test_run_session_skips_speech_when_sanitized_text_is_empty(tmp_path, monkeyp
     assert spoken == []
 
 
+def test_run_session_logs_why_speech_was_skipped(monkeypatch, tmp_path, capsys):
+    fake = FakeEnvironment.create(
+        tmp_path,
+        final_text="https://example.com/docs",
+    )
+    spoken: list[str] = []
+    monkeypatch.setattr(
+        "codex_tts.service.speak_text",
+        lambda text, config: spoken.append(text),
+    )
+
+    exit_code = run_session(
+        fake.codex_cmd,
+        AppConfig(verbose=True),
+        fake.state_db,
+        fake.home_dir,
+        fake.cwd,
+    )
+
+    assert exit_code == 0
+    assert spoken == []
+    assert "codex-tts: sanitized final message was empty; skipping speech" in capsys.readouterr().err
+
+
 def test_run_session_skips_speech_when_no_thread_matches(tmp_path, monkeypatch):
     fake = FakeEnvironment.without_matching_thread(tmp_path)
     spoken: list[str] = []
@@ -267,6 +366,55 @@ def test_run_session_skips_speech_when_no_thread_matches(tmp_path, monkeypatch):
         lambda text, config: spoken.append(text),
     )
     exit_code = run_session(fake.codex_cmd, fake.config, fake.state_db, fake.home_dir, fake.cwd)
+    assert exit_code == 0
+    assert spoken == []
+
+
+def test_run_session_skips_speech_when_thread_candidates_are_ambiguous(tmp_path, monkeypatch):
+    fake = FakeEnvironment.create(tmp_path)
+    rollout_one = tmp_path / "ambiguous-1.jsonl"
+    rollout_two = tmp_path / "ambiguous-2.jsonl"
+    rollout_one.write_text(
+        '{"type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"wrong one"}]}}\n',
+        encoding="utf-8",
+    )
+    rollout_two.write_text(
+        '{"type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"wrong two"}]}}\n',
+        encoding="utf-8",
+    )
+    insert_thread_record(
+        fake.state_db,
+        thread_id="thread-a",
+        rollout_path=rollout_one,
+        created_at=1001,
+        updated_at=1002,
+        cwd=str(fake.cwd),
+    )
+    insert_thread_record(
+        fake.state_db,
+        thread_id="thread-b",
+        rollout_path=rollout_two,
+        created_at=1001,
+        updated_at=1002,
+        cwd=str(fake.cwd),
+    )
+
+    spoken: list[str] = []
+    monkeypatch.setattr("codex_tts.service.list_thread_ids", lambda path: set())
+    monkeypatch.setattr("codex_tts.service.time.time", lambda: 1000)
+    monkeypatch.setattr(
+        "codex_tts.service.speak_text",
+        lambda text, config: spoken.append(text),
+    )
+
+    exit_code = run_session(
+        [sys.executable, "-c", "import time; time.sleep(0.01)"],
+        fake.config,
+        fake.state_db,
+        fake.home_dir,
+        fake.cwd,
+    )
+
     assert exit_code == 0
     assert spoken == []
 
@@ -313,3 +461,38 @@ def test_run_session_speaks_each_new_final_answer(tmp_path, monkeypatch):
 
     assert exit_code == 0
     assert spoken == ["first reply", "second reply"]
+
+
+def test_run_session_attaches_watcher_after_process_exit_when_thread_appears_late(tmp_path, monkeypatch):
+    fake = FakeEnvironment.create(tmp_path)
+    spoken: list[str] = []
+    thread = ThreadRecord(
+        thread_id="late-thread",
+        rollout_path=tmp_path / "late-rollout.jsonl",
+        created_at=1001,
+        updated_at=1002,
+    )
+
+    class FakeProcess:
+        def poll(self):
+            return 0
+
+    class FakeWatcher:
+        def __init__(self, path):
+            self.path = path
+
+        def poll(self):
+            return [ParsedRolloutEvent(kind="final_message", text="late reply")]
+
+    resolve_results = iter([None, thread])
+
+    monkeypatch.setattr("codex_tts.service.list_thread_ids", lambda path: set())
+    monkeypatch.setattr("codex_tts.service.subprocess.Popen", lambda *args, **kwargs: FakeProcess())
+    monkeypatch.setattr("codex_tts.service.resolve_active_thread", lambda *args, **kwargs: next(resolve_results))
+    monkeypatch.setattr("codex_tts.service.FinalAnswerWatcher", FakeWatcher)
+    monkeypatch.setattr("codex_tts.service.speak_text", lambda text, config: spoken.append(text))
+
+    exit_code = run_session(["codex"], AppConfig(verbose=True), fake.state_db, fake.home_dir, fake.cwd)
+
+    assert exit_code == 0
+    assert spoken == ["late reply"]

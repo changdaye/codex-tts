@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 from codex_tts.config import AppConfig
+from codex_tts.diagnostics import DebugLogger
 from codex_tts.models import ParsedRolloutEvent
 from codex_tts.rollout import FinalAnswerWatcher
 from codex_tts.speech_text import sanitize_for_speech
@@ -22,13 +23,16 @@ def handle_rollout_events(
     watcher: FinalAnswerWatcher,
     policy: SpeechPolicy,
     config: AppConfig,
+    logger: DebugLogger,
 ) -> None:
     for event in watcher.poll():
-        spoken_event = ParsedRolloutEvent(
-            kind=event.kind,
-            text=sanitize_for_speech(event.text),
-        )
+        sanitized_text = sanitize_for_speech(event.text)
+        if not sanitized_text.strip():
+            logger.log("sanitized final message was empty; skipping speech")
+            continue
+        spoken_event = ParsedRolloutEvent(kind=event.kind, text=sanitized_text)
         if not policy.should_speak(spoken_event):
+            logger.log(f"speech policy skipped event kind={spoken_event.kind}")
             continue
         try:
             speak_text(spoken_event.text, config)
@@ -45,6 +49,7 @@ def run_session(
 ) -> int:
     started_at = int(time.time())
     known_thread_ids = list_thread_ids(state_db)
+    logger = DebugLogger(enabled=config.verbose)
     env = os.environ.copy()
     env["HOME"] = str(home_dir)
     process = subprocess.Popen(codex_cmd, cwd=str(cwd), env=env)
@@ -59,12 +64,14 @@ def run_session(
                 cwd=str(cwd),
                 started_at=started_at,
                 known_thread_ids=known_thread_ids,
+                logger=logger,
             )
             if thread is not None:
                 watcher = FinalAnswerWatcher(thread.rollout_path)
+                logger.log(f"watching rollout {thread.rollout_path}")
 
         if watcher is not None:
-            handle_rollout_events(watcher, policy, config)
+            handle_rollout_events(watcher, policy, config, logger)
 
         exit_code = process.poll()
         if exit_code is not None:
@@ -78,11 +85,15 @@ def run_session(
             cwd=str(cwd),
             started_at=started_at,
             known_thread_ids=known_thread_ids,
+            logger=logger,
         )
         if thread is not None:
             watcher = FinalAnswerWatcher(thread.rollout_path)
+            logger.log(f"watching rollout {thread.rollout_path}")
+        else:
+            logger.log("no reliable thread matched this codex session")
 
     if watcher is not None:
-        handle_rollout_events(watcher, policy, config)
+        handle_rollout_events(watcher, policy, config, logger)
 
     return exit_code

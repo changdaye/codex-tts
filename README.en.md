@@ -22,6 +22,7 @@ If you mainly use Codex in a terminal, you usually hit one of these situations:
 - Supports runtime overrides for voice, absolute rate, multipliers, and named presets
 - Sanitizes spoken text before playback, removing bare URLs and keeping only link labels for Markdown links
 - Never blocks or crashes the Codex session if speech playback fails
+- Supports `--verbose` stderr diagnostics for thread matching and skipped playback
 
 ## Requirements
 
@@ -39,7 +40,7 @@ This is the recommended path. After installation, you can run `codex-tts` from a
 
 ```bash
 cd /path/to/codex-tts
-python3 -m venv .venv
+bash scripts/bootstrap.sh
 bash scripts/install.sh
 ```
 
@@ -62,13 +63,15 @@ You can also choose a custom install directory:
 CODEX_TTS_INSTALL_DIR="$HOME/bin" bash scripts/install.sh
 ```
 
+The installer checks that you are in the repository root and that `.venv/bin/python` exists. If the environment is not ready yet, it tells you to run `bash scripts/bootstrap.sh` first. It also warns if `codex` is not currently in `PATH`.
+
 ### Option 2: Run directly from source
 
 If you do not want a global command yet, run it from the repository:
 
 ```bash
 cd /path/to/codex-tts
-python3 -m venv .venv
+bash scripts/bootstrap.sh
 source .venv/bin/activate
 PYTHONPATH=src python -m codex_tts.cli --preset ultra -- --no-alt-screen
 ```
@@ -145,6 +148,12 @@ List available system voices:
 codex-tts --list-voices
 ```
 
+Print debug diagnostics:
+
+```bash
+codex-tts --verbose -- --no-alt-screen
+```
+
 Use a specific config file:
 
 ```bash
@@ -166,6 +175,7 @@ Notes:
 | `--speed` | `float` | Multiply the current speech rate, for example `3` |
 | `--preset` | `str` | Apply a named speech-rate preset |
 | `--list-voices` | flag | Print available voices and exit |
+| `--verbose` | flag | Print thread-selection and skip diagnostics to stderr |
 
 Rules:
 
@@ -199,6 +209,7 @@ backend = "say"
 voice = "Tingting"
 rate = 180
 speak_phase = "final_only"
+verbose = false
 ```
 
 Fields:
@@ -209,6 +220,15 @@ Fields:
 | `voice` | `"Tingting"` | Default voice |
 | `rate` | `180` | Default speech rate |
 | `speak_phase` | `"final_only"` | Only final-answer playback is supported today |
+| `verbose` | `false` | Whether to print debug logs to stderr |
+
+Validation rules:
+
+- `backend` must currently be `say`
+- `rate` must be greater than `0`
+- `voice` must not be empty after trimming whitespace
+- `speak_phase` must currently be `final_only`
+- `verbose` must be a boolean
 
 Precedence:
 
@@ -284,6 +304,14 @@ Check these first:
 - The reply reached the final stage and is not still in `commentary`
 - You are not running multiple unrelated Codex sessions in the same directory
 
+If that still does not explain it, rerun with `--verbose`:
+
+```bash
+codex-tts --verbose -- --no-alt-screen
+```
+
+That prints thread candidate decisions, rollout attachment, and skip reasons such as sanitized text becoming empty.
+
 ### List available voices
 
 ```bash
@@ -295,6 +323,7 @@ codex-tts --list-voices
 Run the full test suite:
 
 ```bash
+bash scripts/bootstrap.sh
 source .venv/bin/activate
 python -m pytest -q
 ```
@@ -312,6 +341,11 @@ Test the installer scripts only:
 source .venv/bin/activate
 python -m pytest tests/test_install_script.py -q
 ```
+
+CI notes:
+
+- GitHub Actions runs `python -m pytest -q` on every push and pull request
+- Run the full suite locally before you hand off changes
 
 ## Future Work
 

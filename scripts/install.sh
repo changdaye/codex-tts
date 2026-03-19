@@ -7,9 +7,14 @@ INSTALL_DIR="${CODEX_TTS_INSTALL_DIR:-$HOME/.local/bin}"
 PYTHON_BIN="$ROOT_DIR/.venv/bin/python"
 LAUNCHER_PATH="$INSTALL_DIR/codex-tts"
 
+if [ ! -f "$ROOT_DIR/pyproject.toml" ]; then
+  echo "codex-tts install: could not find pyproject.toml under $ROOT_DIR" >&2
+  exit 1
+fi
+
 if [ ! -x "$PYTHON_BIN" ]; then
   echo "codex-tts install: missing virtualenv python at $PYTHON_BIN" >&2
-  echo "Create it first with: python3 -m venv \"$ROOT_DIR/.venv\"" >&2
+  echo "From the repository root run: bash scripts/bootstrap.sh" >&2
   exit 1
 fi
 
@@ -32,9 +37,13 @@ EOF
 chmod +x "$LAUNCHER_PATH"
 
 echo "Installed codex-tts to $LAUNCHER_PATH"
+if ! command -v codex >/dev/null 2>&1; then
+  echo "codex-tts install: warning: \`codex\` is not currently in PATH." >&2
+fi
 case ":${PATH:-}:" in
   *":$INSTALL_DIR:"*) ;;
   *)
     echo "Add $INSTALL_DIR to PATH to run codex-tts from any directory."
+    echo "For example: export PATH=\"$INSTALL_DIR:\$PATH\""
     ;;
 esac

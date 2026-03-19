@@ -22,6 +22,7 @@
 - 支持运行时覆盖音色、绝对语速、倍率和语速预设
 - 播报前会自动清洗文本，不朗读裸 URL，Markdown 链接只保留标题
 - 语音失败不会中断 Codex 主流程
+- 支持 `--verbose` 输出线程匹配、rollout 绑定和跳过播报原因
 
 ## 环境要求
 
@@ -39,7 +40,7 @@
 
 ```bash
 cd /path/to/codex-tts
-python3 -m venv .venv
+bash scripts/bootstrap.sh
 bash scripts/install.sh
 ```
 
@@ -62,13 +63,15 @@ source ~/.zshrc
 CODEX_TTS_INSTALL_DIR="$HOME/bin" bash scripts/install.sh
 ```
 
+安装脚本会先检查仓库根目录和 `.venv/bin/python`。如果环境还没准备好，它会提示你先运行 `bash scripts/bootstrap.sh`。如果当前 `PATH` 里没有 `codex`，它也会给出警告。
+
 ### 方案 2：直接从源码运行
 
 如果你暂时不想安装全局命令，可以直接在仓库里启动：
 
 ```bash
 cd /path/to/codex-tts
-python3 -m venv .venv
+bash scripts/bootstrap.sh
 source .venv/bin/activate
 PYTHONPATH=src python -m codex_tts.cli --preset ultra -- --no-alt-screen
 ```
@@ -145,6 +148,12 @@ codex-tts --rate 540 -- --no-alt-screen
 codex-tts --list-voices
 ```
 
+输出调试信息：
+
+```bash
+codex-tts --verbose -- --no-alt-screen
+```
+
 显式指定配置文件：
 
 ```bash
@@ -166,6 +175,7 @@ codex-tts --config ~/.codex-tts/config.toml -- --no-alt-screen
 | `--speed` | `float` | 本次运行按倍率调整当前语速，例如 `3` |
 | `--preset` | `str` | 本次运行使用内置语速预设 |
 | `--list-voices` | flag | 列出当前后端支持的系统音色并退出 |
+| `--verbose` | flag | 把线程选择、跳过原因等调试信息输出到 stderr |
 
 需要注意的规则：
 
@@ -199,6 +209,7 @@ backend = "say"
 voice = "Tingting"
 rate = 180
 speak_phase = "final_only"
+verbose = false
 ```
 
 字段说明：
@@ -209,6 +220,15 @@ speak_phase = "final_only"
 | `voice` | `"Tingting"` | 默认音色 |
 | `rate` | `180` | 默认语速 |
 | `speak_phase` | `"final_only"` | 当前只支持最终回复播报 |
+| `verbose` | `false` | 是否输出 stderr 调试日志 |
+
+配置校验规则：
+
+- `backend` 目前只能是 `say`
+- `rate` 必须大于 `0`
+- `voice` 去掉首尾空白后不能为空
+- `speak_phase` 目前只能是 `final_only`
+- `verbose` 必须是布尔值
 
 优先级规则：
 
@@ -284,6 +304,14 @@ PYTHONPATH=src python -m codex_tts.cli --help
 - 这条回复已经进入最终阶段，而不是还停留在 `commentary`
 - 尽量避免在同一目录同时跑多个独立 Codex 会话
 
+如果还没有定位到原因，可以加上 `--verbose` 重新运行：
+
+```bash
+codex-tts --verbose -- --no-alt-screen
+```
+
+它会把线程候选选择、rollout 绑定、文本清洗后为空等跳过原因打印到 stderr。
+
 ### 想看可用音色
 
 ```bash
@@ -295,6 +323,7 @@ codex-tts --list-voices
 运行测试：
 
 ```bash
+bash scripts/bootstrap.sh
 source .venv/bin/activate
 python -m pytest -q
 ```
@@ -312,6 +341,11 @@ PYTHONPATH=src python -m codex_tts.cli --help
 source .venv/bin/activate
 python -m pytest tests/test_install_script.py -q
 ```
+
+CI 说明：
+
+- GitHub Actions 会在每次 `push` 和 `pull request` 上运行 `python -m pytest -q`
+- 如果你准备提交改动，最好先在本地跑一遍完整测试
 
 ## 后续方向
 

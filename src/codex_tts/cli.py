@@ -2,6 +2,7 @@ import argparse
 from dataclasses import replace
 from pathlib import Path
 import shutil
+import sys
 
 from codex_tts.config import default_config_path, load_config
 from codex_tts.service import run_session
@@ -70,6 +71,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="List available system voices for the current backend and exit.",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print debug diagnostics about thread selection and skipped speech.",
+    )
     parser.add_argument("codex_args", nargs=argparse.REMAINDER)
     return parser
 
@@ -88,12 +94,18 @@ def merge_config(config, args):
         merged = replace(merged, rate=PRESET_RATES[args.preset])
     elif args.speed is not None:
         merged = replace(merged, rate=max(1, round(merged.rate * args.speed)))
+    if args.verbose:
+        merged = replace(merged, verbose=True)
     return merged
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    config = merge_config(load_config(args.config), args)
+    try:
+        config = merge_config(load_config(args.config), args)
+    except ValueError as exc:
+        print(f"codex-tts: invalid config: {exc}", file=sys.stderr)
+        return 2
     if args.list_voices:
         for voice in list_voices(config.backend):
             print(voice)

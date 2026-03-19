@@ -14,3 +14,12 @@ class ThreadRecord:
     rollout_path: Path
     created_at: int
     updated_at: int
+
+
+@dataclass(frozen=True)
+class ThreadCandidate:
+    thread_id: str
+    rollout_path: Path
+    created_at: int
+    updated_at: int
+    score: tuple[int, int]

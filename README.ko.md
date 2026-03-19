@@ -22,6 +22,7 @@
 - 실행 시 음성, 절대 속도, 배수, 속도 프리셋을 덮어쓸 수 있음
 - 읽기 전에 텍스트를 정리하여 URL은 읽지 않고 Markdown 링크는 링크 제목만 남김
 - 음성 재생이 실패해도 Codex 본 흐름은 중단하지 않음
+- `--verbose`로 thread 선택과 스킵 이유를 stderr에 출력할 수 있음
 
 ## 요구 사항
 
@@ -39,7 +40,7 @@
 
 ```bash
 cd /path/to/codex-tts
-python3 -m venv .venv
+bash scripts/bootstrap.sh
 bash scripts/install.sh
 ```
 
@@ -62,13 +63,15 @@ source ~/.zshrc
 CODEX_TTS_INSTALL_DIR="$HOME/bin" bash scripts/install.sh
 ```
 
+설치 스크립트는 저장소 루트와 `.venv/bin/python` 존재 여부를 먼저 확인합니다. 환경이 아직 준비되지 않았다면 먼저 `bash scripts/bootstrap.sh`를 실행하라고 안내합니다. `codex`가 `PATH`에 없으면 경고도 출력합니다.
+
 ### 방법 2: 소스에서 직접 실행
 
 전역 명령을 아직 설치하고 싶지 않다면 저장소에서 직접 실행할 수 있습니다.
 
 ```bash
 cd /path/to/codex-tts
-python3 -m venv .venv
+bash scripts/bootstrap.sh
 source .venv/bin/activate
 PYTHONPATH=src python -m codex_tts.cli --preset ultra -- --no-alt-screen
 ```
@@ -145,6 +148,12 @@ codex-tts --rate 540 -- --no-alt-screen
 codex-tts --list-voices
 ```
 
+진단 로그 출력:
+
+```bash
+codex-tts --verbose -- --no-alt-screen
+```
+
 설정 파일을 명시적으로 지정:
 
 ```bash
@@ -166,6 +175,7 @@ codex-tts --config ~/.codex-tts/config.toml -- --no-alt-screen
 | `--speed` | `float` | 현재 속도에 배수를 곱함. 예: `3` |
 | `--preset` | `str` | 이름 있는 속도 프리셋 사용 |
 | `--list-voices` | flag | 사용 가능한 음성 목록을 출력하고 종료 |
+| `--verbose` | flag | thread 선택과 스킵 이유를 stderr에 출력 |
 
 규칙:
 
@@ -199,6 +209,7 @@ backend = "say"
 voice = "Tingting"
 rate = 180
 speak_phase = "final_only"
+verbose = false
 ```
 
 필드 설명:
@@ -209,6 +220,15 @@ speak_phase = "final_only"
 | `voice` | `"Tingting"` | 기본 음성 |
 | `rate` | `180` | 기본 읽기 속도 |
 | `speak_phase` | `"final_only"` | 현재는 최종 답변 읽기만 지원 |
+| `verbose` | `false` | stderr 디버그 로그 출력 여부 |
+
+검증 규칙:
+
+- `backend`는 현재 `say`만 허용
+- `rate`는 `0`보다 커야 함
+- `voice`는 앞뒤 공백 제거 후 비어 있으면 안 됨
+- `speak_phase`는 현재 `final_only`만 허용
+- `verbose`는 불리언이어야 함
 
 우선순위:
 
@@ -284,6 +304,14 @@ PYTHONPATH=src python -m codex_tts.cli --help
 - 해당 응답이 아직 `commentary`가 아니라 실제 최종 단계인지
 - 같은 디렉터리에서 여러 개의 서로 다른 Codex 세션을 동시에 돌리고 있지 않은지
 
+그래도 이유가 보이지 않으면 `--verbose`를 붙여 다시 실행하세요.
+
+```bash
+codex-tts --verbose -- --no-alt-screen
+```
+
+thread 후보 선택, rollout 감시 연결, 정리 후 텍스트가 비어서 읽기를 건너뛴 경우 같은 이유를 stderr에 출력합니다。
+
 ### 사용 가능한 음성을 보고 싶을 때
 
 ```bash
@@ -295,6 +323,7 @@ codex-tts --list-voices
 전체 테스트 실행:
 
 ```bash
+bash scripts/bootstrap.sh
 source .venv/bin/activate
 python -m pytest -q
 ```
@@ -312,6 +341,11 @@ PYTHONPATH=src python -m codex_tts.cli --help
 source .venv/bin/activate
 python -m pytest tests/test_install_script.py -q
 ```
+
+CI 메모:
+
+- GitHub Actions는 모든 push 와 pull request 에서 `python -m pytest -q`를 실행합니다
+- 변경을 넘기기 전에 로컬에서도 전체 테스트를 한 번 돌리는 편이 안전합니다
 
 ## 이후 계획
 

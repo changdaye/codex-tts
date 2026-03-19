@@ -22,6 +22,7 @@
 - 音声、絶対速度、倍率、速度プリセットを実行時に上書きできる
 - 読み上げ前にテキストを整形し、URL は読まず、Markdown リンクはラベルだけを残す
 - 音声再生に失敗しても Codex 本体の処理は止めない
+- `--verbose` で thread 選択やスキップ理由の診断ログを stderr に出せる
 
 ## 動作要件
 
@@ -39,7 +40,7 @@
 
 ```bash
 cd /path/to/codex-tts
-python3 -m venv .venv
+bash scripts/bootstrap.sh
 bash scripts/install.sh
 ```
 
@@ -62,13 +63,15 @@ source ~/.zshrc
 CODEX_TTS_INSTALL_DIR="$HOME/bin" bash scripts/install.sh
 ```
 
+インストーラはリポジトリ直下かどうかと `.venv/bin/python` の有無を確認します。環境がまだなら `bash scripts/bootstrap.sh` を先に実行するよう案内します。`codex` が `PATH` に無い場合も警告します。
+
 ### 方法 2: ソースから直接実行
 
 グローバルコマンドをまだ入れたくない場合は、リポジトリから直接実行できます。
 
 ```bash
 cd /path/to/codex-tts
-python3 -m venv .venv
+bash scripts/bootstrap.sh
 source .venv/bin/activate
 PYTHONPATH=src python -m codex_tts.cli --preset ultra -- --no-alt-screen
 ```
@@ -145,6 +148,12 @@ codex-tts --rate 540 -- --no-alt-screen
 codex-tts --list-voices
 ```
 
+診断ログを出す:
+
+```bash
+codex-tts --verbose -- --no-alt-screen
+```
+
 設定ファイルを明示的に指定する:
 
 ```bash
@@ -166,6 +175,7 @@ codex-tts --config ~/.codex-tts/config.toml -- --no-alt-screen
 | `--speed` | `float` | 現在の速度に倍率をかける。例: `3` |
 | `--preset` | `str` | 名前付き速度プリセットを使う |
 | `--list-voices` | flag | 利用可能な音声一覧を表示して終了する |
+| `--verbose` | flag | thread 選択やスキップ理由を stderr に出力する |
 
 ルール:
 
@@ -199,6 +209,7 @@ backend = "say"
 voice = "Tingting"
 rate = 180
 speak_phase = "final_only"
+verbose = false
 ```
 
 項目:
@@ -209,6 +220,15 @@ speak_phase = "final_only"
 | `voice` | `"Tingting"` | 既定の音声 |
 | `rate` | `180` | 既定の読み上げ速度 |
 | `speak_phase` | `"final_only"` | 現時点では最終回答のみ読み上げ対応 |
+| `verbose` | `false` | stderr に診断ログを出すかどうか |
+
+検証ルール:
+
+- `backend` は現在 `say` のみ
+- `rate` は `0` より大きい必要がある
+- `voice` は前後の空白を除去した後に空であってはいけない
+- `speak_phase` は現在 `final_only` のみ
+- `verbose` は真偽値である必要がある
 
 優先順位:
 
@@ -284,6 +304,14 @@ PYTHONPATH=src python -m codex_tts.cli --help
 - その返信が `commentary` ではなく最終段階に到達しているか
 - 同じディレクトリで無関係な Codex セッションを複数同時に動かしていないか
 
+それでも原因が見えない場合は、`--verbose` を付けて再実行してください。
+
+```bash
+codex-tts --verbose -- --no-alt-screen
+```
+
+thread 候補の選択、rollout の監視開始、整形後に空になったため未読み上げになったケースなどを stderr に出します。
+
 ### 利用可能な音声を見たい
 
 ```bash
@@ -295,6 +323,7 @@ codex-tts --list-voices
 全テストを実行:
 
 ```bash
+bash scripts/bootstrap.sh
 source .venv/bin/activate
 python -m pytest -q
 ```
@@ -312,6 +341,11 @@ PYTHONPATH=src python -m codex_tts.cli --help
 source .venv/bin/activate
 python -m pytest tests/test_install_script.py -q
 ```
+
+CI メモ:
+
+- GitHub Actions は push と pull request ごとに `python -m pytest -q` を実行します
+- 変更を渡す前にローカルでも全テストを回すのが安全です
 
 ## 今後の予定
 

@@ -5,6 +5,9 @@ from pathlib import Path
 from codex_tts.models import ParsedRolloutEvent
 
 
+TAIL_CHECK_SIZE = 64
+
+
 def parse_rollout_line(line: str) -> ParsedRolloutEvent:
     row = json.loads(line)
     payload = row.get("payload", {})
@@ -41,16 +44,77 @@ def read_new_events(
     return events, len(lines)
 
 
+class RolloutCursor:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.offset = 0
+        self._file_id: tuple[int, int] | None = None
+        self._pending = ""
+        self._tail = ""
+
+    def read_new_lines(self) -> list[str]:
+        try:
+            stat = self.path.stat()
+        except FileNotFoundError:
+            self._reset()
+            return []
+
+        file_id = (stat.st_dev, stat.st_ino)
+        if self._should_reset(file_id, stat.st_size):
+            self._reset(file_id=file_id)
+
+        with self.path.open("r", encoding="utf-8") as handle:
+            handle.seek(self.offset)
+            chunk = handle.read()
+            self.offset = handle.tell()
+
+        if not chunk:
+            self._file_id = file_id
+            return []
+
+        self._file_id = file_id
+        self._tail = (self._tail + chunk)[-TAIL_CHECK_SIZE:]
+        return self._extract_complete_lines(chunk)
+
+    def _should_reset(self, file_id: tuple[int, int], size: int) -> bool:
+        if self._file_id is None:
+            return False
+        if file_id != self._file_id:
+            return True
+        if size < self.offset:
+            return True
+        if self.offset == 0 or not self._tail or size < len(self._tail):
+            return False
+
+        with self.path.open("r", encoding="utf-8") as handle:
+            handle.seek(self.offset - len(self._tail))
+            return handle.read(len(self._tail)) != self._tail
+
+    def _extract_complete_lines(self, chunk: str) -> list[str]:
+        buffer = self._pending + chunk
+        complete_lines: list[str] = []
+        self._pending = ""
+        for part in buffer.splitlines(keepends=True):
+            if part.endswith(("\n", "\r")):
+                complete_lines.append(part.rstrip("\r\n"))
+            else:
+                self._pending = part
+        return complete_lines
+
+    def _reset(self, *, file_id: tuple[int, int] | None = None) -> None:
+        self.offset = 0
+        self._file_id = file_id
+        self._pending = ""
+        self._tail = ""
+
+
 class FinalAnswerWatcher:
     def __init__(self, path: Path) -> None:
         self.path = path
-        self._line_index = 0
+        self._cursor = RolloutCursor(path)
 
     def poll(self) -> list[ParsedRolloutEvent]:
-        events, self._line_index = read_new_events(
-            self.path,
-            start_line=self._line_index,
-        )
+        events = [parse_rollout_line(line) for line in self._cursor.read_new_lines()]
         return [
             event
             for event in events
