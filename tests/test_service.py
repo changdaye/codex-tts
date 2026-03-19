@@ -56,6 +56,13 @@ def test_parser_rejects_preset_with_speed():
         raise AssertionError("expected parser to reject --preset with --speed")
 
 
+def test_parser_accepts_verbose_flag():
+    parser = build_parser()
+    args = parser.parse_args(["--verbose", "--", "--no-alt-screen"])
+    assert args.verbose is True
+    assert args.codex_args == ["--no-alt-screen"]
+
+
 def test_build_backend_returns_say_backend():
     backend = build_backend("say")
     assert backend.__class__.__name__ == "SayBackend"
@@ -171,6 +178,17 @@ def test_main_lists_voices_without_starting_codex(monkeypatch, capsys):
     assert capsys.readouterr().out == "Tingting\nMei-Jia\n"
 
 
+def test_main_prints_invalid_config_errors(monkeypatch, tmp_path, capsys):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("rate = 0\n", encoding="utf-8")
+    monkeypatch.setattr("codex_tts.cli.shutil.which", lambda name: "/usr/local/bin/codex")
+
+    exit_code = main(["--config", str(config_path)])
+
+    assert exit_code == 2
+    assert capsys.readouterr().err == "codex-tts: invalid config: rate must be greater than 0\n"
+
+
 @dataclass
 class FakeEnvironment:
     codex_cmd: list[str]
@@ -278,6 +296,30 @@ def test_run_session_skips_speech_when_sanitized_text_is_empty(tmp_path, monkeyp
 
     assert exit_code == 0
     assert spoken == []
+
+
+def test_run_session_logs_why_speech_was_skipped(monkeypatch, tmp_path, capsys):
+    fake = FakeEnvironment.create(
+        tmp_path,
+        final_text="https://example.com/docs",
+    )
+    spoken: list[str] = []
+    monkeypatch.setattr(
+        "codex_tts.service.speak_text",
+        lambda text, config: spoken.append(text),
+    )
+
+    exit_code = run_session(
+        fake.codex_cmd,
+        AppConfig(verbose=True),
+        fake.state_db,
+        fake.home_dir,
+        fake.cwd,
+    )
+
+    assert exit_code == 0
+    assert spoken == []
+    assert "codex-tts: sanitized final message was empty; skipping speech" in capsys.readouterr().err
 
 
 def test_run_session_skips_speech_when_no_thread_matches(tmp_path, monkeypatch):

@@ -22,6 +22,7 @@ If you mainly use Codex in a terminal, you usually hit one of these situations:
 - Supports runtime overrides for voice, absolute rate, multipliers, and named presets
 - Sanitizes spoken text before playback, removing bare URLs and keeping only link labels for Markdown links
 - Never blocks or crashes the Codex session if speech playback fails
+- Supports `--verbose` stderr diagnostics for thread matching and skipped playback
 
 ## Requirements
 
@@ -145,6 +146,12 @@ List available system voices:
 codex-tts --list-voices
 ```
 
+Print debug diagnostics:
+
+```bash
+codex-tts --verbose -- --no-alt-screen
+```
+
 Use a specific config file:
 
 ```bash
@@ -166,6 +173,7 @@ Notes:
 | `--speed` | `float` | Multiply the current speech rate, for example `3` |
 | `--preset` | `str` | Apply a named speech-rate preset |
 | `--list-voices` | flag | Print available voices and exit |
+| `--verbose` | flag | Print thread-selection and skip diagnostics to stderr |
 
 Rules:
 
@@ -199,6 +207,7 @@ backend = "say"
 voice = "Tingting"
 rate = 180
 speak_phase = "final_only"
+verbose = false
 ```
 
 Fields:
@@ -209,6 +218,15 @@ Fields:
 | `voice` | `"Tingting"` | Default voice |
 | `rate` | `180` | Default speech rate |
 | `speak_phase` | `"final_only"` | Only final-answer playback is supported today |
+| `verbose` | `false` | Whether to print debug logs to stderr |
+
+Validation rules:
+
+- `backend` must currently be `say`
+- `rate` must be greater than `0`
+- `voice` must not be empty after trimming whitespace
+- `speak_phase` must currently be `final_only`
+- `verbose` must be a boolean
 
 Precedence:
 
@@ -283,6 +301,14 @@ Check these first:
 - You started Codex through `codex-tts`, not plain `codex`
 - The reply reached the final stage and is not still in `commentary`
 - You are not running multiple unrelated Codex sessions in the same directory
+
+If that still does not explain it, rerun with `--verbose`:
+
+```bash
+codex-tts --verbose -- --no-alt-screen
+```
+
+That prints thread candidate decisions, rollout attachment, and skip reasons such as sanitized text becoming empty.
 
 ### List available voices
 
