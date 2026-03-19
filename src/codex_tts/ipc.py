@@ -47,7 +47,10 @@ class JsonSocketServer:
         with connection:
             request = _read_json_line(connection)
             response = self.handler(request)
-            _write_json_line(connection, response)
+            try:
+                _write_json_line(connection, response)
+            except (BrokenPipeError, ConnectionResetError):
+                return True
         return True
 
     def close(self) -> None:

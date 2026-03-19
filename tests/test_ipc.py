@@ -52,6 +52,37 @@ def test_json_socket_server_requires_start_before_handling_requests(tmp_path):
         server.handle_next_request()
 
 
+def test_json_socket_server_survives_client_disconnect_before_reading_response(tmp_path):
+    socket_path = tmp_path / "daemon.sock"
+    server = JsonSocketServer(socket_path, handler=lambda request: {"ok": True})
+    server.start()
+
+    def disconnecting_client() -> None:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.connect(str(_socket_bind_path(socket_path)))
+            client.sendall(b'{"message":"hello"}\n')
+
+    worker = threading.Thread(target=disconnecting_client)
+    worker.start()
+    try:
+        assert server.handle_next_request(timeout=1.0) is True
+        worker.join(timeout=2.0)
+        assert not worker.is_alive()
+
+        def handle_request() -> None:
+            server.handle_next_request(timeout=1.0)
+
+        followup = threading.Thread(target=handle_request)
+        followup.start()
+        try:
+            response = call_daemon(socket_path, {"message": "after-disconnect"})
+        finally:
+            followup.join(timeout=2.0)
+        assert response == {"ok": True}
+    finally:
+        server.close()
+
+
 def test_socket_bind_path_keeps_short_socket_paths():
     socket_path = Path("/tmp/codex-tts-short.sock")
 
