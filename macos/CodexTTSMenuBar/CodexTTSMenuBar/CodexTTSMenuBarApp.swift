@@ -56,6 +56,16 @@ private struct MenuContentView: View {
         } else {
             Text("Daemon Unreachable")
                 .font(.headline)
+            if viewModel.isStartingDaemon {
+                Text("Starting daemon...")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Button("Start Daemon") {
+                    viewModel.startDaemon()
+                }
+                .disabled(!viewModel.canStartDaemon)
+            }
             if let errorMessage = viewModel.errorMessage {
                 Text(errorMessage)
                     .font(.caption)

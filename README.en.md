@@ -316,8 +316,8 @@ Usage notes:
 - This is a menu bar app, not a regular windowed app
 - After launching it, look for the icon on the right side of the macOS menu bar
 - Before first use, run `bash scripts/install.sh` so the `codex-tts` launcher is available in a standard location
-- If the daemon is not running yet, the app stays open but shows a disconnected state
-- The simplest flow is to run `codex-tts daemon run` in a terminal first, then launch the menubar app
+- If the daemon is not running yet, the app now tries to start it automatically in the background
+- The first connection can take a few seconds; if auto-start fails, use `Start Daemon` from the menu
 
 ## Spoken Text Sanitization
 
@@ -376,7 +376,8 @@ Check these first:
 
 - Look at the right side of the macOS menu bar, not the Dock
 - Make sure you already ran `bash scripts/install.sh`
-- If the icon shows a disconnected state, start the daemon first with `codex-tts daemon run`
+- If the icon briefly shows a disconnected state, wait a few seconds for auto-start
+- If it stays disconnected, click `Start Daemon` from the menu
 
 ### Codex replied, but nothing was spoken
 

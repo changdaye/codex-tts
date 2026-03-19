@@ -14,6 +14,7 @@ package struct CommandOutput: Equatable, Sendable {
 
 package protocol CLIExecuting: Sendable {
     func run(arguments: [String]) throws -> CommandOutput
+    func launchDetached(arguments: [String]) throws
 }
 
 struct ProcessCLIExecutor: CLIExecuting, @unchecked Sendable {
@@ -53,6 +54,19 @@ struct ProcessCLIExecutor: CLIExecuting, @unchecked Sendable {
             throw CLIClientError.commandFailed(output)
         }
         return output
+    }
+
+    func launchDetached(arguments: [String]) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: try resolveExecutable())
+        process.arguments = arguments
+        process.environment = environment
+
+        let nullHandle = try FileHandle(forWritingTo: URL(fileURLWithPath: "/dev/null"))
+        process.standardOutput = nullHandle
+        process.standardError = nullHandle
+
+        try process.run()
     }
 
     private func resolveExecutable() throws -> String {
@@ -166,5 +180,9 @@ package final class CLIClient: @unchecked Sendable {
 
     func setGlobalEnabled(_ enabled: Bool) throws {
         _ = try executor.run(arguments: [enabled ? "enable" : "disable"])
+    }
+
+    func startDaemon() throws {
+        try executor.launchDetached(arguments: ["daemon", "run"])
     }
 }

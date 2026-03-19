@@ -327,8 +327,8 @@ dist/CodexTTS.app.zip
 - 这是一个菜单栏应用，不会弹出主窗口
 - 双击启动后，请看 macOS 顶部菜单栏右侧图标
 - 第一次使用前，建议先执行 `bash scripts/install.sh`，让 `codex-tts` launcher 落到标准路径
-- 如果 daemon 还没启动，应用会显示断开状态，但不会直接退出
-- 最简单的体验方式是先在终端里运行 `codex-tts daemon run`，再打开这个 menubar app
+- 如果 daemon 还没启动，应用会自动在后台拉起它；首次连接可能需要几秒
+- 如果自动拉起失败，菜单里会显示 `Start Daemon`，可以手动重试
 
 ## 当前限制
 
@@ -376,7 +376,8 @@ PYTHONPATH=src python -m codex_tts.cli --help
 
 - 你看的是 macOS 顶部菜单栏右侧，而不是 Dock
 - 已经先执行过 `bash scripts/install.sh`
-- 如果图标显示断开状态，请先在终端运行 `codex-tts daemon run`
+- 如果图标短暂显示断开状态，先等几秒让应用自动拉起 daemon
+- 如果仍然断开，点菜单里的 `Start Daemon`
 
 ### Codex 有回复，但没有朗读
 

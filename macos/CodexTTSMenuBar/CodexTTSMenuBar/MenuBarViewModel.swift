@@ -7,6 +7,7 @@ package final class MenuBarViewModel: ObservableObject {
     @Published private(set) var snapshot: DaemonStatusSnapshot?
     @Published package private(set) var isReachable = false
     @Published package private(set) var errorMessage: String?
+    @Published package private(set) var isStartingDaemon = false
 
     private let client: CLIClient
     private let workerQueue = DispatchQueue(label: "CodexTTS.MenuBarViewModel.worker", qos: .utility)
@@ -14,6 +15,7 @@ package final class MenuBarViewModel: ObservableObject {
     private var refreshInFlight = false
     private var hasPendingRefresh = false
     private var pendingRefreshClearError = true
+    private var hasAttemptedAutomaticDaemonStart = false
 
     package init(client: CLIClient = CLIClient()) {
         self.client = client
@@ -35,6 +37,10 @@ package final class MenuBarViewModel: ObservableObject {
 
     package var focusSessionID: String? {
         snapshot?.focusSessionID
+    }
+
+    package var canStartDaemon: Bool {
+        !isStartingDaemon
     }
 
     package func refresh(clearError: Bool = true) {
@@ -65,6 +71,10 @@ package final class MenuBarViewModel: ObservableObject {
         runCommand {
             try client.setGlobalEnabled(enabled)
         }
+    }
+
+    package func startDaemon() {
+        startDaemon(automatic: false)
     }
 
     private func startPolling() {
@@ -117,6 +127,7 @@ package final class MenuBarViewModel: ObservableObject {
             snapshot = nil
             isReachable = false
             errorMessage = error.localizedDescription
+            maybeStartDaemonIfNeeded(for: error)
         }
 
         refreshInFlight = false
@@ -126,5 +137,59 @@ package final class MenuBarViewModel: ObservableObject {
             pendingRefreshClearError = true
             startRefresh(clearError: nextClearError)
         }
+    }
+
+    private func startDaemon(automatic: Bool) {
+        guard !isStartingDaemon else {
+            return
+        }
+        if automatic {
+            hasAttemptedAutomaticDaemonStart = true
+        }
+
+        isStartingDaemon = true
+        if automatic {
+            errorMessage = "Starting daemon..."
+        }
+        let client = self.client
+        workerQueue.async { [weak self] in
+            let result = Result {
+                try client.startDaemon()
+            }
+            Task { @MainActor in
+                self?.finishDaemonStart(result)
+            }
+        }
+    }
+
+    private func finishDaemonStart(_ result: Result<Void, Error>) {
+        isStartingDaemon = false
+        switch result {
+        case .success:
+            scheduleStartupRefreshes()
+        case .failure(let error):
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func scheduleStartupRefreshes() {
+        for delay in [0.1, 0.3, 0.6, 1.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                Task { @MainActor in
+                    self?.refresh(clearError: false)
+                }
+            }
+        }
+    }
+
+    private func maybeStartDaemonIfNeeded(for error: Error) {
+        guard !hasAttemptedAutomaticDaemonStart else {
+            return
+        }
+        let message = error.localizedDescription.lowercased()
+        guard message.contains("daemon is not running") else {
+            return
+        }
+        startDaemon(automatic: true)
     }
 }
