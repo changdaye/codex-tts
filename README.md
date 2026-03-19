@@ -35,6 +35,26 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
+如果你想安装成任意目录都能直接运行的命令，执行：
+
+```bash
+bash scripts/install.sh
+```
+
+这个脚本会把 launcher 写到默认目录 `~/.local/bin/codex-tts`。
+
+如果你的 shell 还没有把 `~/.local/bin` 放进 `PATH`，加上这一行：
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+建议把它写进你的 `~/.zshrc`，然后重新加载：
+
+```bash
+source ~/.zshrc
+```
+
 最稳的启动方式是直接从源码运行：
 
 ```bash
@@ -66,6 +86,12 @@ codex-tts --preset ultra -- --no-alt-screen
 
 ```bash
 PYTHONPATH=src python -m codex_tts.cli -- --no-alt-screen
+```
+
+如果你已经执行过安装脚本，对应命令就是：
+
+```bash
+codex-tts -- --no-alt-screen
 ```
 
 切换音色并使用预设语速：
@@ -204,6 +230,7 @@ PYTHONPATH=src python -m codex_tts.cli --list-voices
 
 - 先确认你已经 `source .venv/bin/activate`
 - 如果没有安装命令入口，就直接用 `PYTHONPATH=src python -m codex_tts.cli`
+- 如果你已经执行过 `bash scripts/install.sh`，再确认 `~/.local/bin` 已经加入 `PATH`
 
 Codex 有回复但没有朗读：
 
