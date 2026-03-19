@@ -3,6 +3,15 @@ import subprocess
 from pathlib import Path
 
 
+def copy_script(root: Path, destination_root: Path, script_name: str) -> Path:
+    source = root / "scripts" / script_name
+    target = destination_root / "scripts" / script_name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    target.chmod(0o755)
+    return target
+
+
 def test_install_script_creates_working_launcher(tmp_path):
     root = Path(__file__).resolve().parents[1]
     install_script = root / "scripts" / "install.sh"
@@ -86,3 +95,38 @@ def test_uninstall_script_is_idempotent_when_launcher_missing(tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_install_script_reports_missing_virtualenv_python(tmp_path):
+    root = Path(__file__).resolve().parents[1]
+    fake_root = tmp_path / "project"
+    install_script = copy_script(root, fake_root, "install.sh")
+    (fake_root / "pyproject.toml").write_text("[project]\nname = 'fake'\nversion = '0.0.0'\n", encoding="utf-8")
+
+    result = subprocess.run(
+        ["bash", str(install_script)],
+        cwd=fake_root,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "codex-tts install: missing virtualenv python at" in result.stderr
+    assert "bash scripts/bootstrap.sh" in result.stderr
+
+
+def test_bootstrap_script_creates_virtualenv_when_missing(tmp_path):
+    root = Path(__file__).resolve().parents[1]
+    fake_root = tmp_path / "project"
+    bootstrap_script = copy_script(root, fake_root, "bootstrap.sh")
+
+    result = subprocess.run(
+        ["bash", str(bootstrap_script)],
+        cwd=fake_root,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (fake_root / ".venv" / "bin" / "python").exists()
+    assert f'source "{fake_root}/.venv/bin/activate"' in result.stdout

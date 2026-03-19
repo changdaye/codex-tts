@@ -40,7 +40,7 @@
 
 ```bash
 cd /path/to/codex-tts
-python3 -m venv .venv
+bash scripts/bootstrap.sh
 bash scripts/install.sh
 ```
 
@@ -63,13 +63,15 @@ source ~/.zshrc
 CODEX_TTS_INSTALL_DIR="$HOME/bin" bash scripts/install.sh
 ```
 
+インストーラはリポジトリ直下かどうかと `.venv/bin/python` の有無を確認します。環境がまだなら `bash scripts/bootstrap.sh` を先に実行するよう案内します。`codex` が `PATH` に無い場合も警告します。
+
 ### 方法 2: ソースから直接実行
 
 グローバルコマンドをまだ入れたくない場合は、リポジトリから直接実行できます。
 
 ```bash
 cd /path/to/codex-tts
-python3 -m venv .venv
+bash scripts/bootstrap.sh
 source .venv/bin/activate
 PYTHONPATH=src python -m codex_tts.cli --preset ultra -- --no-alt-screen
 ```
@@ -321,6 +323,7 @@ codex-tts --list-voices
 全テストを実行:
 
 ```bash
+bash scripts/bootstrap.sh
 source .venv/bin/activate
 python -m pytest -q
 ```
@@ -338,6 +341,11 @@ PYTHONPATH=src python -m codex_tts.cli --help
 source .venv/bin/activate
 python -m pytest tests/test_install_script.py -q
 ```
+
+CI メモ:
+
+- GitHub Actions は push と pull request ごとに `python -m pytest -q` を実行します
+- 変更を渡す前にローカルでも全テストを回すのが安全です
 
 ## 今後の予定
 

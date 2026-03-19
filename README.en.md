@@ -40,7 +40,7 @@ This is the recommended path. After installation, you can run `codex-tts` from a
 
 ```bash
 cd /path/to/codex-tts
-python3 -m venv .venv
+bash scripts/bootstrap.sh
 bash scripts/install.sh
 ```
 
@@ -63,13 +63,15 @@ You can also choose a custom install directory:
 CODEX_TTS_INSTALL_DIR="$HOME/bin" bash scripts/install.sh
 ```
 
+The installer checks that you are in the repository root and that `.venv/bin/python` exists. If the environment is not ready yet, it tells you to run `bash scripts/bootstrap.sh` first. It also warns if `codex` is not currently in `PATH`.
+
 ### Option 2: Run directly from source
 
 If you do not want a global command yet, run it from the repository:
 
 ```bash
 cd /path/to/codex-tts
-python3 -m venv .venv
+bash scripts/bootstrap.sh
 source .venv/bin/activate
 PYTHONPATH=src python -m codex_tts.cli --preset ultra -- --no-alt-screen
 ```
@@ -321,6 +323,7 @@ codex-tts --list-voices
 Run the full test suite:
 
 ```bash
+bash scripts/bootstrap.sh
 source .venv/bin/activate
 python -m pytest -q
 ```
@@ -338,6 +341,11 @@ Test the installer scripts only:
 source .venv/bin/activate
 python -m pytest tests/test_install_script.py -q
 ```
+
+CI notes:
+
+- GitHub Actions runs `python -m pytest -q` on every push and pull request
+- Run the full suite locally before you hand off changes
 
 ## Future Work
 

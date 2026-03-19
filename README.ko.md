@@ -40,7 +40,7 @@
 
 ```bash
 cd /path/to/codex-tts
-python3 -m venv .venv
+bash scripts/bootstrap.sh
 bash scripts/install.sh
 ```
 
@@ -63,13 +63,15 @@ source ~/.zshrc
 CODEX_TTS_INSTALL_DIR="$HOME/bin" bash scripts/install.sh
 ```
 
+설치 스크립트는 저장소 루트와 `.venv/bin/python` 존재 여부를 먼저 확인합니다. 환경이 아직 준비되지 않았다면 먼저 `bash scripts/bootstrap.sh`를 실행하라고 안내합니다. `codex`가 `PATH`에 없으면 경고도 출력합니다.
+
 ### 방법 2: 소스에서 직접 실행
 
 전역 명령을 아직 설치하고 싶지 않다면 저장소에서 직접 실행할 수 있습니다.
 
 ```bash
 cd /path/to/codex-tts
-python3 -m venv .venv
+bash scripts/bootstrap.sh
 source .venv/bin/activate
 PYTHONPATH=src python -m codex_tts.cli --preset ultra -- --no-alt-screen
 ```
@@ -321,6 +323,7 @@ codex-tts --list-voices
 전체 테스트 실행:
 
 ```bash
+bash scripts/bootstrap.sh
 source .venv/bin/activate
 python -m pytest -q
 ```
@@ -338,6 +341,11 @@ PYTHONPATH=src python -m codex_tts.cli --help
 source .venv/bin/activate
 python -m pytest tests/test_install_script.py -q
 ```
+
+CI 메모:
+
+- GitHub Actions는 모든 push 와 pull request 에서 `python -m pytest -q`를 실행합니다
+- 변경을 넘기기 전에 로컬에서도 전체 테스트를 한 번 돌리는 편이 안전합니다
 
 ## 이후 계획
 

@@ -40,7 +40,7 @@
 
 ```bash
 cd /path/to/codex-tts
-python3 -m venv .venv
+bash scripts/bootstrap.sh
 bash scripts/install.sh
 ```
 
@@ -63,13 +63,15 @@ source ~/.zshrc
 CODEX_TTS_INSTALL_DIR="$HOME/bin" bash scripts/install.sh
 ```
 
+安装脚本会先检查仓库根目录和 `.venv/bin/python`。如果环境还没准备好，它会提示你先运行 `bash scripts/bootstrap.sh`。如果当前 `PATH` 里没有 `codex`，它也会给出警告。
+
 ### 方案 2：直接从源码运行
 
 如果你暂时不想安装全局命令，可以直接在仓库里启动：
 
 ```bash
 cd /path/to/codex-tts
-python3 -m venv .venv
+bash scripts/bootstrap.sh
 source .venv/bin/activate
 PYTHONPATH=src python -m codex_tts.cli --preset ultra -- --no-alt-screen
 ```
@@ -321,6 +323,7 @@ codex-tts --list-voices
 运行测试：
 
 ```bash
+bash scripts/bootstrap.sh
 source .venv/bin/activate
 python -m pytest -q
 ```
@@ -338,6 +341,11 @@ PYTHONPATH=src python -m codex_tts.cli --help
 source .venv/bin/activate
 python -m pytest tests/test_install_script.py -q
 ```
+
+CI 说明：
+
+- GitHub Actions 会在每次 `push` 和 `pull request` 上运行 `python -m pytest -q`
+- 如果你准备提交改动，最好先在本地跑一遍完整测试
 
 ## 后续方向
 
