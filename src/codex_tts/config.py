@@ -19,6 +19,18 @@ def default_config_path() -> Path:
     return Path.home() / ".codex-tts" / "config.toml"
 
 
+def daemon_root_path() -> Path:
+    return Path.home() / ".codex-tts"
+
+
+def daemon_socket_path() -> Path:
+    return daemon_root_path() / "daemon.sock"
+
+
+def daemon_state_path() -> Path:
+    return daemon_root_path() / "daemon-state.json"
+
+
 def load_config(path: Path) -> AppConfig:
     if not path.exists():
         return AppConfig()

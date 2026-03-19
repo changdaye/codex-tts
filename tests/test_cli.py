@@ -43,3 +43,11 @@ def test_cli_module_main_entrypoint_exits_cleanly_for_help(monkeypatch):
         runpy.run_module("codex_tts.cli", run_name="__main__")
 
     assert exc.value.code == 0
+
+
+def test_build_parser_keeps_default_config_path_under_codex_tts_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    args = build_parser().parse_args([])
+
+    assert args.config == tmp_path / ".codex-tts" / "config.toml"

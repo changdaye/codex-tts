@@ -1,4 +1,7 @@
-from codex_tts.config import load_config
+from pathlib import Path
+
+from codex_tts.config import daemon_root_path, daemon_socket_path, daemon_state_path, load_config
+from codex_tts.models import DaemonSettings, DaemonStatusSnapshot, ManagedSessionSnapshot
 
 
 def test_load_config_returns_defaults_when_file_missing(tmp_path):
@@ -113,3 +116,40 @@ def test_load_config_normalizes_voice_and_verbose_flag(tmp_path):
 
     assert config.voice == "Tingting"
     assert config.verbose is True
+
+
+def test_daemon_root_and_paths_default_under_codex_tts_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    assert daemon_root_path() == tmp_path / ".codex-tts"
+    assert daemon_socket_path() == tmp_path / ".codex-tts" / "daemon.sock"
+    assert daemon_state_path() == tmp_path / ".codex-tts" / "daemon-state.json"
+
+
+def test_daemon_status_snapshot_defaults_to_enabled_with_no_sessions():
+    snapshot = DaemonStatusSnapshot()
+
+    assert snapshot.global_enabled is True
+    assert snapshot.sessions == []
+    assert snapshot.focus_session_id is None
+
+
+def test_managed_session_snapshot_defaults_are_unfocused_and_unmuted(tmp_path):
+    session = ManagedSessionSnapshot(
+        session_id="session-1",
+        cwd=str(tmp_path),
+        started_at=123,
+    )
+
+    assert session.status == "pending_bind"
+    assert session.is_focus is False
+    assert session.is_muted is False
+    assert session.thread_id is None
+    assert session.rollout_path is None
+
+
+def test_daemon_settings_defaults_to_global_enabled():
+    settings = DaemonSettings()
+
+    assert settings.global_enabled is True
+    assert settings.updated_at is None
