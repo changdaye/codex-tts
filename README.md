@@ -23,6 +23,8 @@
 - 播报前会自动清洗文本，不朗读裸 URL，Markdown 链接只保留标题
 - 语音失败不会中断 Codex 主流程
 - 支持 `--verbose` 输出线程匹配、rollout 绑定和跳过播报原因
+- 支持后台 daemon 运行时和多会话 focus 控制
+- 包含一个原生 macOS menubar shell，用于查看会话和切换 focus
 
 ## 环境要求
 
@@ -94,13 +96,13 @@ bash scripts/uninstall.sh
 如果你已经完成了全局安装，最直接的启动方式是：
 
 ```bash
-codex-tts --preset ultra -- --no-alt-screen
+codex-tts launch --preset ultra -- --no-alt-screen
 ```
 
 如果你是从源码直接运行，对应命令是：
 
 ```bash
-PYTHONPATH=src python -m codex_tts.cli --preset ultra -- --no-alt-screen
+PYTHONPATH=src python -m codex_tts.cli launch --preset ultra -- --no-alt-screen
 ```
 
 进入 Codex 之后，可以先发一个很短的测试请求，例如：
@@ -259,12 +261,61 @@ verbose = false
 
 这层清洗只影响语音播报，不影响你在终端里看到的原始文本。
 
+## 后台运行时
+
+`codex-tts` 现在支持后台 daemon 模式：
+
+- `codex-tts launch -- ...` 启动新的 Codex 会话
+- daemon 负责 launch 注册、thread 绑定、rollout 轮询和播报仲裁
+- 同一时刻只有一个 focus 会话允许发声
+- 第一个 active 会话会自动成为 focus
+- 新会话不会自动抢占 focus
+- 当前 focus 会话退出后，focus 会被清空，而不是自动切到别的会话
+
+常用控制命令：
+
+```bash
+codex-tts launch -- --no-alt-screen
+codex-tts status --json
+codex-tts focus <session-id>
+codex-tts mute <session-id>
+codex-tts unmute <session-id>
+codex-tts enable
+codex-tts disable
+codex-tts daemon run
+```
+
+兼容旧用法：`codex-tts -- --no-alt-screen` 仍然等价于 `codex-tts launch -- --no-alt-screen`。
+
+## Menubar Shell
+
+仓库中现在包含一个原生 macOS menubar shell，位置在：
+
+```text
+macos/CodexTTSMenuBar
+```
+
+当前以 Swift Package 形式提供，可直接构建：
+
+```bash
+swift build --package-path macos/CodexTTSMenuBar
+```
+
+它目前负责：
+
+- 展示 daemon 是否可达
+- 展示当前 focus 会话
+- 展示当前会话列表
+- 对会话执行 focus / mute / unmute
+- 开关全局播报
+
 ## 当前限制
 
 - 当前只支持 macOS `say`
 - 当前只播报最终回复，不播报错误或中间状态
 - 多个 Codex 会话同时在同一目录并发运行时，不保证 100% 匹配准确
 - 当前实现使用轮询，不是文件系统事件监听
+- menubar shell 目前还是可构建的原生壳子，尚未做成完整签名分发的 macOS app
 
 ## 排障
 
@@ -328,6 +379,12 @@ source .venv/bin/activate
 python -m pytest -q
 ```
 
+构建 menubar shell：
+
+```bash
+swift build --package-path macos/CodexTTSMenuBar
+```
+
 查看 CLI 帮助：
 
 ```bash
@@ -352,4 +409,5 @@ CI 说明：
 - 增加 OpenAI / ElevenLabs / Edge TTS 后端
 - 增加错误提示播报模式
 - 优化多会话识别
-- 评估 daemon 模式
+- 完整的 macOS app 打包、签名与开机自启
+- 通知中心式历史面板与最近一次回复重播

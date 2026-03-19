@@ -23,6 +23,8 @@ If you mainly use Codex in a terminal, you usually hit one of these situations:
 - Sanitizes spoken text before playback, removing bare URLs and keeping only link labels for Markdown links
 - Never blocks or crashes the Codex session if speech playback fails
 - Supports `--verbose` stderr diagnostics for thread matching and skipped playback
+- Supports a background daemon runtime with multi-session focus control
+- Includes a native macOS menubar shell for session visibility and focus switching
 
 ## Requirements
 
@@ -94,13 +96,13 @@ This only removes `~/.local/bin/codex-tts`. It does not remove the repository, `
 If you installed the global launcher, the shortest command is:
 
 ```bash
-codex-tts --preset ultra -- --no-alt-screen
+codex-tts launch --preset ultra -- --no-alt-screen
 ```
 
 If you are running from source, use:
 
 ```bash
-PYTHONPATH=src python -m codex_tts.cli --preset ultra -- --no-alt-screen
+PYTHONPATH=src python -m codex_tts.cli launch --preset ultra -- --no-alt-screen
 ```
 
 Once Codex opens, send a short test prompt such as:
@@ -248,6 +250,54 @@ The runtime flow is:
 
 It does not parse terminal ANSI output. It reads Codex's structured local session data directly.
 
+## Background Runtime
+
+`codex-tts` now supports a daemon mode:
+
+- `codex-tts launch -- ...` starts a new Codex session
+- the daemon owns launch registration, thread binding, rollout polling, and speech arbitration
+- only one focused session may speak at a time
+- the first active session auto-focuses
+- new sessions do not steal focus
+- when the focused session exits, focus is cleared instead of being reassigned automatically
+
+Common control commands:
+
+```bash
+codex-tts launch -- --no-alt-screen
+codex-tts status --json
+codex-tts focus <session-id>
+codex-tts mute <session-id>
+codex-tts unmute <session-id>
+codex-tts enable
+codex-tts disable
+codex-tts daemon run
+```
+
+Legacy compatibility remains: `codex-tts -- --no-alt-screen` still behaves like `codex-tts launch -- --no-alt-screen`.
+
+## Menubar Shell
+
+The repository now includes a native macOS menubar shell under:
+
+```text
+macos/CodexTTSMenuBar
+```
+
+It is currently shipped as a Swift Package:
+
+```bash
+swift build --package-path macos/CodexTTSMenuBar
+```
+
+The shell can:
+
+- show daemon reachability
+- show the current focus session
+- list managed sessions
+- focus / mute / unmute sessions
+- toggle global speech
+
 ## Spoken Text Sanitization
 
 Before text reaches TTS, `codex-tts` applies a small cleanup layer:
@@ -265,6 +315,7 @@ This only changes the spoken text. It does not change what you see in the termin
 - Final replies only, no spoken errors or intermediate status
 - Concurrent Codex sessions in the same directory are not guaranteed to match perfectly
 - Polling-based implementation, not filesystem events
+- The menubar shell is currently a buildable native wrapper, not a fully packaged signed macOS app
 
 ## Troubleshooting
 
@@ -328,6 +379,12 @@ source .venv/bin/activate
 python -m pytest -q
 ```
 
+Build the menubar shell:
+
+```bash
+swift build --package-path macos/CodexTTSMenuBar
+```
+
 Show CLI help:
 
 ```bash
@@ -352,4 +409,5 @@ CI notes:
 - Add OpenAI / ElevenLabs / Edge TTS backends
 - Add spoken error notifications
 - Improve multi-session matching
-- Evaluate a daemon mode
+- Ship a packaged signed macOS app with launch-at-login integration
+- Add a notification-style history panel and replay actions

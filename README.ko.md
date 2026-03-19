@@ -23,6 +23,8 @@
 - 읽기 전에 텍스트를 정리하여 URL은 읽지 않고 Markdown 링크는 링크 제목만 남김
 - 음성 재생이 실패해도 Codex 본 흐름은 중단하지 않음
 - `--verbose`로 thread 선택과 스킵 이유를 stderr에 출력할 수 있음
+- 백그라운드 daemon 런타임과 다중 세션 focus 제어 지원
+- 세션 가시성과 focus 전환을 위한 네이티브 macOS menubar shell 포함
 
 ## 요구 사항
 
@@ -73,7 +75,7 @@ CODEX_TTS_INSTALL_DIR="$HOME/bin" bash scripts/install.sh
 cd /path/to/codex-tts
 bash scripts/bootstrap.sh
 source .venv/bin/activate
-PYTHONPATH=src python -m codex_tts.cli --preset ultra -- --no-alt-screen
+PYTHONPATH=src python -m codex_tts.cli launch --preset ultra -- --no-alt-screen
 ```
 
 이 방식은 `PATH` 변경이 필요 없지만 저장소 기준으로 실행해야 합니다.
@@ -94,13 +96,13 @@ bash scripts/uninstall.sh
 전역 설치를 마쳤다면 가장 짧은 실행 명령은 다음입니다.
 
 ```bash
-codex-tts --preset ultra -- --no-alt-screen
+codex-tts launch --preset ultra -- --no-alt-screen
 ```
 
 소스에서 직접 실행한다면 다음을 사용하세요.
 
 ```bash
-PYTHONPATH=src python -m codex_tts.cli --preset ultra -- --no-alt-screen
+PYTHONPATH=src python -m codex_tts.cli launch --preset ultra -- --no-alt-screen
 ```
 
 Codex가 열리면 먼저 짧은 테스트 프롬프트를 보내 보세요.
@@ -121,25 +123,25 @@ Codex가 열리면 먼저 짧은 테스트 프롬프트를 보내 보세요.
 기본 실행:
 
 ```bash
-codex-tts -- --no-alt-screen
+codex-tts launch -- --no-alt-screen
 ```
 
 음성을 바꾸고 프리셋 사용:
 
 ```bash
-codex-tts --voice Tingting --preset faster -- --no-alt-screen
+codex-tts launch --voice Tingting --preset faster -- --no-alt-screen
 ```
 
 배수로 속도 조정:
 
 ```bash
-codex-tts --speed 3 -- --no-alt-screen
+codex-tts launch --speed 3 -- --no-alt-screen
 ```
 
 절대 속도 직접 지정:
 
 ```bash
-codex-tts --rate 540 -- --no-alt-screen
+codex-tts launch --rate 540 -- --no-alt-screen
 ```
 
 사용 가능한 시스템 음성 보기:
@@ -151,13 +153,13 @@ codex-tts --list-voices
 진단 로그 출력:
 
 ```bash
-codex-tts --verbose -- --no-alt-screen
+codex-tts launch --verbose -- --no-alt-screen
 ```
 
 설정 파일을 명시적으로 지정:
 
 ```bash
-codex-tts --config ~/.codex-tts/config.toml -- --no-alt-screen
+codex-tts launch --config ~/.codex-tts/config.toml -- --no-alt-screen
 ```
 
 설명:
@@ -248,6 +250,54 @@ verbose = false
 
 터미널 ANSI 출력은 파싱하지 않습니다. 대신 Codex가 저장하는 구조화된 로컬 세션 데이터를 직접 읽습니다.
 
+## 백그라운드 런타임
+
+`codex-tts`는 daemon 모드를 지원합니다.
+
+- `codex-tts launch -- ...` 로 새 Codex 세션 시작
+- daemon 이 launch 등록, thread 바인딩, rollout 폴링, 음성 중재를 담당
+- 동시에 말할 수 있는 세션은 focus 된 1개뿐
+- 처음 active 가 된 세션이 자동으로 focus 됨
+- 새 세션은 기존 focus 를 빼앗지 않음
+- focus 세션이 종료되면 다른 세션으로 자동 전환하지 않고 focus 를 비움
+
+자주 쓰는 제어 명령:
+
+```bash
+codex-tts launch -- --no-alt-screen
+codex-tts status --json
+codex-tts focus <session-id>
+codex-tts mute <session-id>
+codex-tts unmute <session-id>
+codex-tts enable
+codex-tts disable
+codex-tts daemon run
+```
+
+기존 호환성도 유지합니다. `codex-tts -- --no-alt-screen` 는 계속 `codex-tts launch -- --no-alt-screen` 와 동일하게 동작합니다.
+
+## Menubar Shell
+
+저장소에는 네이티브 macOS menubar shell 도 포함되어 있습니다.
+
+```text
+macos/CodexTTSMenuBar
+```
+
+현재는 Swift Package 형태로 제공합니다.
+
+```bash
+swift build --package-path macos/CodexTTSMenuBar
+```
+
+현재 셸이 하는 일:
+
+- daemon 연결 가능 여부 표시
+- 현재 focus 세션 표시
+- 관리 중인 세션 목록 표시
+- 세션별 focus / mute / unmute
+- 전역 음성 ON/OFF 전환
+
 ## 읽기 전 텍스트 정리 규칙
 
 TTS에 넘기기 전에 가벼운 정리 단계가 있습니다.
@@ -265,6 +315,7 @@ TTS에 넘기기 전에 가벼운 정리 단계가 있습니다.
 - 최종 답변만 읽고 오류나 중간 상태는 읽지 않음
 - 같은 디렉터리에서 여러 Codex 세션을 동시에 실행하면 완벽한 매칭을 보장하지 않음
 - 파일 시스템 이벤트가 아니라 폴링 기반 구현
+- menubar shell 은 현재 빌드 가능한 네이티브 래퍼이며, 서명된 배포용 macOS 앱은 아직 아님
 
 ## 문제 해결
 
@@ -307,7 +358,7 @@ PYTHONPATH=src python -m codex_tts.cli --help
 그래도 이유가 보이지 않으면 `--verbose`를 붙여 다시 실행하세요.
 
 ```bash
-codex-tts --verbose -- --no-alt-screen
+codex-tts launch --verbose -- --no-alt-screen
 ```
 
 thread 후보 선택, rollout 감시 연결, 정리 후 텍스트가 비어서 읽기를 건너뛴 경우 같은 이유를 stderr에 출력합니다。
@@ -326,6 +377,12 @@ codex-tts --list-voices
 bash scripts/bootstrap.sh
 source .venv/bin/activate
 python -m pytest -q
+```
+
+menubar shell 빌드:
+
+```bash
+swift build --package-path macos/CodexTTSMenuBar
 ```
 
 CLI 도움말 확인:
@@ -352,4 +409,5 @@ CI 메모:
 - OpenAI / ElevenLabs / Edge TTS 백엔드 추가
 - 오류 알림 읽기 기능 추가
 - 다중 세션 매칭 개선
-- daemon 모드 검토
+- 배포용 서명 macOS 앱과 로그인 시 자동 시작
+- 알림 센터 스타일의 히스토리 패널과 최근 응답 다시 재생
