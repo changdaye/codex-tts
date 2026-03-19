@@ -1,9 +1,25 @@
 import argparse
+from dataclasses import replace
 from pathlib import Path
 import shutil
 
 from codex_tts.config import default_config_path, load_config
 from codex_tts.service import run_session
+from codex_tts.tts import list_voices
+
+
+def positive_float(value: str) -> float:
+    parsed = float(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("value must be greater than 0")
+    return parsed
+
+
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("value must be greater than 0")
+    return parsed
 
 
 class CodexTTSArgumentParser(argparse.ArgumentParser):
@@ -22,6 +38,26 @@ def build_parser() -> argparse.ArgumentParser:
         default=default_config_path(),
         help="Path to the codex-tts config file.",
     )
+    parser.add_argument(
+        "--voice",
+        help="Override the configured system voice for this run.",
+    )
+    speed_group = parser.add_mutually_exclusive_group()
+    speed_group.add_argument(
+        "--rate",
+        type=positive_int,
+        help="Set the absolute speech rate for this run.",
+    )
+    speed_group.add_argument(
+        "--speed",
+        type=positive_float,
+        help="Multiply the configured speech rate for this run.",
+    )
+    parser.add_argument(
+        "--list-voices",
+        action="store_true",
+        help="List available system voices for the current backend and exit.",
+    )
     parser.add_argument("codex_args", nargs=argparse.REMAINDER)
     return parser
 
@@ -30,13 +66,29 @@ def build_codex_command(codex_args: list[str], *, codex_binary: str) -> list[str
     return [codex_binary, *codex_args]
 
 
+def merge_config(config, args):
+    merged = config
+    if args.voice:
+        merged = replace(merged, voice=args.voice)
+    if args.rate is not None:
+        merged = replace(merged, rate=args.rate)
+    elif args.speed is not None:
+        merged = replace(merged, rate=max(1, round(merged.rate * args.speed)))
+    return merged
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    config = merge_config(load_config(args.config), args)
+    if args.list_voices:
+        for voice in list_voices(config.backend):
+            print(voice)
+        return 0
+
     codex_binary = shutil.which("codex")
     if codex_binary is None:
         raise RuntimeError("Could not find `codex` in PATH.")
 
-    config = load_config(args.config)
     home_dir = Path.home()
     state_db = home_dir / ".codex" / "state_5.sqlite"
     codex_cmd = build_codex_command(args.codex_args, codex_binary=codex_binary)

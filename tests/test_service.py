@@ -2,9 +2,8 @@ import sqlite3
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 
-from codex_tts.cli import build_codex_command, build_parser, main
+from codex_tts.cli import build_codex_command, build_parser, main, merge_config
 from codex_tts.config import AppConfig
 from codex_tts.service import run_session
 from codex_tts.tts import build_backend
@@ -16,6 +15,16 @@ def test_parser_accepts_passthrough_args():
     assert args.codex_args == ["--no-alt-screen"]
 
 
+def test_parser_rejects_rate_and_speed_together():
+    parser = build_parser()
+    try:
+        parser.parse_args(["--rate", "220", "--speed", "1.5"])
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("expected parser to reject --rate with --speed")
+
+
 def test_build_backend_returns_say_backend():
     backend = build_backend("say")
     assert backend.__class__.__name__ == "SayBackend"
@@ -24,6 +33,25 @@ def test_build_backend_returns_say_backend():
 def test_build_codex_command_prefixes_real_codex_binary():
     command = build_codex_command(["--no-alt-screen"], codex_binary="/usr/local/bin/codex")
     assert command == ["/usr/local/bin/codex", "--no-alt-screen"]
+
+
+def test_merge_config_applies_cli_voice_and_speed_overrides():
+    parser = build_parser()
+    args = parser.parse_args(["--voice", "Mei-Jia", "--speed", "1.5", "--", "--no-alt-screen"])
+
+    config = merge_config(AppConfig(voice="Tingting", rate=180), args)
+
+    assert config.voice == "Mei-Jia"
+    assert config.rate == 270
+
+
+def test_merge_config_applies_absolute_rate_override():
+    parser = build_parser()
+    args = parser.parse_args(["--rate", "240"])
+
+    config = merge_config(AppConfig(rate=180), args)
+
+    assert config.rate == 240
 
 
 def test_main_invokes_service_with_loaded_config(monkeypatch, tmp_path):
@@ -56,6 +84,21 @@ def test_main_invokes_service_with_loaded_config(monkeypatch, tmp_path):
     assert captured["cmd"] == ["/usr/local/bin/codex", "--no-alt-screen"]
     assert captured["config"] == AppConfig()
     assert captured["state_db"].name == "state_5.sqlite"
+
+
+def test_main_lists_voices_without_starting_codex(monkeypatch, capsys):
+    monkeypatch.setattr("codex_tts.cli.shutil.which", lambda name: "/usr/local/bin/codex")
+    monkeypatch.setattr("codex_tts.cli.load_config", lambda path: AppConfig())
+    monkeypatch.setattr("codex_tts.cli.list_voices", lambda backend_name: ["Tingting", "Mei-Jia"])
+    monkeypatch.setattr(
+        "codex_tts.cli.run_session",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("run_session should not be called")),
+    )
+
+    exit_code = main(["--list-voices"])
+
+    assert exit_code == 0
+    assert capsys.readouterr().out == "Tingting\nMei-Jia\n"
 
 
 @dataclass
