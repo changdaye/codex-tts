@@ -24,6 +24,10 @@ PRESET_RATES = {
 }
 
 
+class DaemonRequestError(RuntimeError):
+    pass
+
+
 def positive_float(value: str) -> float:
     parsed = float(value)
     if parsed <= 0:
@@ -135,23 +139,27 @@ def main(argv: list[str] | None = None) -> int:
 
 def run_command(argv: list[str]) -> int:
     command = argv[0]
-    if command == "launch":
-        return main(argv[1:])
-    if command == "status":
-        return _run_status_command(argv[1:])
-    if command == "focus":
-        return _run_session_id_command(argv[1:], daemon_command="set_focus")
-    if command == "mute":
-        return _run_session_id_command(argv[1:], daemon_command="mute_session")
-    if command == "unmute":
-        return _run_session_id_command(argv[1:], daemon_command="unmute_session")
-    if command == "enable":
-        return _set_global_enabled(True)
-    if command == "disable":
-        return _set_global_enabled(False)
-    if command == "daemon":
-        return _run_daemon_command(argv[1:])
-    raise RuntimeError(f"unknown command: {command}")
+    try:
+        if command == "launch":
+            return main(argv[1:])
+        if command == "status":
+            return _run_status_command(argv[1:])
+        if command == "focus":
+            return _run_session_id_command(argv[1:], daemon_command="set_focus")
+        if command == "mute":
+            return _run_session_id_command(argv[1:], daemon_command="mute_session")
+        if command == "unmute":
+            return _run_session_id_command(argv[1:], daemon_command="unmute_session")
+        if command == "enable":
+            return _set_global_enabled(True)
+        if command == "disable":
+            return _set_global_enabled(False)
+        if command == "daemon":
+            return _run_daemon_command(argv[1:])
+        raise RuntimeError(f"unknown command: {command}")
+    except DaemonRequestError as exc:
+        print(f"codex-tts: {exc}", file=sys.stderr)
+        return 1
 
 
 def launch_codex_session(
@@ -162,8 +170,8 @@ def launch_codex_session(
     cwd: Path,
 ) -> int:
     try:
-        call_daemon(daemon_socket_path(), {"command": "ping"})
-    except OSError:
+        _daemon_request({"command": "ping"})
+    except Exception:
         return run_session(codex_cmd, config, state_db, home_dir, cwd)
 
     started_at = int(time.time())
@@ -171,18 +179,21 @@ def launch_codex_session(
     env = os.environ.copy()
     env["HOME"] = str(home_dir)
     process = subprocess.Popen(codex_cmd, cwd=str(cwd), env=env)
-    call_daemon(
-        daemon_socket_path(),
-        {
-            "command": "register_launch",
-            "session_id": uuid.uuid4().hex,
-            "cwd": str(cwd),
-            "started_at": started_at,
-            "launcher_pid": os.getpid(),
-            "codex_pid": process.pid,
-            "known_thread_ids": known_thread_ids,
-        },
-    )
+    try:
+        _daemon_request(
+            {
+                "command": "register_launch",
+                "session_id": uuid.uuid4().hex,
+                "cwd": str(cwd),
+                "started_at": started_at,
+                "launcher_pid": os.getpid(),
+                "codex_pid": process.pid,
+                "known_thread_ids": known_thread_ids,
+            }
+        )
+    except Exception:
+        _stop_process(process)
+        return run_session(codex_cmd, config, state_db, home_dir, cwd)
     return process.wait()
 
 
@@ -191,7 +202,7 @@ def _run_status_command(argv: list[str]) -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
-    response = call_daemon(daemon_socket_path(), {"command": "status"})
+    response = _daemon_request({"command": "status"})
     snapshot = response["snapshot"]
     if args.json:
         print(json.dumps(snapshot))
@@ -206,8 +217,7 @@ def _run_session_id_command(argv: list[str], *, daemon_command: str) -> int:
     parser = argparse.ArgumentParser(prog=f"codex-tts {daemon_command}")
     parser.add_argument("session_id")
     args = parser.parse_args(argv)
-    call_daemon(
-        daemon_socket_path(),
+    _daemon_request(
         {
             "command": daemon_command,
             "session_id": args.session_id,
@@ -217,8 +227,7 @@ def _run_session_id_command(argv: list[str], *, daemon_command: str) -> int:
 
 
 def _set_global_enabled(enabled: bool) -> int:
-    call_daemon(
-        daemon_socket_path(),
+    _daemon_request(
         {
             "command": "set_global_enabled",
             "enabled": enabled,
@@ -247,6 +256,28 @@ def _run_daemon_command(argv: list[str]) -> int:
     )
     daemon.serve_forever()
     return 0
+
+
+def _daemon_request(request: dict[str, object]) -> dict[str, object]:
+    response = call_daemon(daemon_socket_path(), request)
+    if not response.get("ok", False):
+        raise DaemonRequestError(str(response.get("error", "daemon request failed")))
+    return response
+
+
+def _stop_process(process: subprocess.Popen) -> None:
+    try:
+        process.terminate()
+        process.wait(timeout=1.0)
+        return
+    except Exception:
+        pass
+
+    try:
+        process.kill()
+        process.wait(timeout=1.0)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

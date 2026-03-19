@@ -6,7 +6,7 @@ import threading
 import time
 
 from codex_tts.config import AppConfig
-from codex_tts.daemon import CodexTTSDaemon
+from codex_tts.daemon import CodexTTSDaemon, _error_message
 from codex_tts.ipc import call_daemon
 
 
@@ -154,6 +154,43 @@ def test_daemon_ignores_missing_bind_target_and_missing_active_watcher(tmp_path)
     daemon._poll_active_session("session-1")
 
     assert daemon.session_manager.status_snapshot().sessions[0].session_id == "session-1"
+
+
+def test_invalid_session_request_returns_error_without_stopping_daemon(tmp_path):
+    state_db = tmp_path / "state.sqlite"
+    create_threads_db(state_db)
+    daemon = CodexTTSDaemon(
+        config=AppConfig(),
+        state_db=state_db,
+        socket_path=tmp_path / "daemon.sock",
+        settings_path=tmp_path / "daemon-state.json",
+    )
+
+    worker = threading.Thread(target=daemon.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+    worker.start()
+    try:
+        deadline = time.time() + 1
+        while time.time() < deadline and not (tmp_path / "daemon.sock").exists():
+            time.sleep(0.01)
+
+        response = call_daemon(
+            tmp_path / "daemon.sock",
+            {
+                "command": "mute_session",
+                "session_id": "missing",
+            },
+        )
+
+        assert response == {"ok": False, "error": "unknown session: missing"}
+        assert worker.is_alive() is True
+        assert call_daemon(tmp_path / "daemon.sock", {"command": "ping"}) == {"ok": True}
+    finally:
+        daemon.stop()
+        worker.join(timeout=2)
+
+
+def test_error_message_falls_back_to_string_for_empty_args():
+    assert _error_message(Exception()) == ""
 
 
 def test_daemon_tracks_two_sessions_but_only_speaks_focused_one(tmp_path, monkeypatch):

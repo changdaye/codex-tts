@@ -7,6 +7,7 @@ import sys
 import pytest
 
 from codex_tts.cli import (
+    _stop_process,
     build_parser,
     launch_codex_session,
     main,
@@ -187,6 +188,18 @@ def test_main_session_commands_forward_to_daemon(monkeypatch):
     ]
 
 
+def test_main_session_command_returns_error_when_daemon_rejects_request(monkeypatch, capsys):
+    monkeypatch.setattr(
+        "codex_tts.cli.call_daemon",
+        lambda path, request: {"ok": False, "error": "unknown session: missing"},
+    )
+
+    exit_code = main(["mute", "missing"])
+
+    assert exit_code == 1
+    assert capsys.readouterr().err.strip() == "codex-tts: unknown session: missing"
+
+
 def test_run_command_rejects_unknown_subcommand():
     with pytest.raises(RuntimeError, match="unknown command: mystery"):
         run_command(["mystery"])
@@ -250,6 +263,119 @@ def test_launch_registers_new_session_with_daemon_when_available(monkeypatch, tm
     assert popen_calls["cmd"] == ["codex", "--no-alt-screen"]
     assert popen_calls["cwd"] == str(tmp_path / "workspace")
     assert popen_calls["env"]["HOME"] == str(tmp_path / "home")
+
+
+def test_launch_falls_back_to_direct_mode_when_register_fails_after_spawn(monkeypatch, tmp_path):
+    daemon_requests: list[dict[str, object]] = []
+    captured = {}
+
+    class FakeProcess:
+        pid = 4321
+
+        def __init__(self) -> None:
+            self.terminated = False
+            self.killed = False
+            self.wait_calls: list[float | None] = []
+
+        def terminate(self) -> None:
+            self.terminated = True
+
+        def kill(self) -> None:
+            self.killed = True
+
+        def wait(self, timeout: float | None = None) -> int:
+            self.wait_calls.append(timeout)
+            return 0
+
+    process = FakeProcess()
+
+    def fake_call_daemon(path: Path, request: dict[str, object]) -> dict[str, object]:
+        daemon_requests.append(request)
+        if request["command"] == "ping":
+            return {"ok": True}
+        raise RuntimeError("socket closed before newline-delimited JSON message completed")
+
+    monkeypatch.setattr("codex_tts.cli.call_daemon", fake_call_daemon)
+    monkeypatch.setattr("codex_tts.cli.daemon_socket_path", lambda: tmp_path / "daemon.sock")
+    monkeypatch.setattr("codex_tts.cli.list_thread_ids", lambda path: {"thread-a"})
+    monkeypatch.setattr("codex_tts.cli.subprocess.Popen", lambda cmd, cwd, env: process)
+    monkeypatch.setattr(
+        "codex_tts.cli.run_session",
+        lambda codex_cmd, config, state_db, home_dir, cwd: captured.update(
+            {
+                "cmd": codex_cmd,
+                "config": config,
+                "state_db": state_db,
+                "home_dir": home_dir,
+                "cwd": cwd,
+            }
+        )
+        or 11,
+    )
+
+    exit_code = launch_codex_session(
+        ["codex", "--no-alt-screen"],
+        AppConfig(),
+        tmp_path / "state.sqlite",
+        tmp_path / "home",
+        tmp_path / "workspace",
+    )
+
+    assert exit_code == 11
+    assert daemon_requests[0] == {"command": "ping"}
+    assert daemon_requests[1]["command"] == "register_launch"
+    assert process.terminated is True
+    assert process.killed is False
+    assert process.wait_calls == [1.0]
+    assert captured["cmd"] == ["codex", "--no-alt-screen"]
+    assert captured["cwd"] == tmp_path / "workspace"
+
+
+def test_stop_process_kills_when_terminate_fails():
+    class FakeProcess:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, float | None]] = []
+
+        def terminate(self) -> None:
+            self.calls.append(("terminate", None))
+            raise RuntimeError("no terminate")
+
+        def kill(self) -> None:
+            self.calls.append(("kill", None))
+
+        def wait(self, timeout: float | None = None) -> int:
+            self.calls.append(("wait", timeout))
+            return 0
+
+    process = FakeProcess()
+
+    _stop_process(process)
+
+    assert process.calls == [("terminate", None), ("kill", None), ("wait", 1.0)]
+
+
+def test_stop_process_swallows_kill_failure():
+    class FakeProcess:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, float | None]] = []
+
+        def terminate(self) -> None:
+            self.calls.append(("terminate", None))
+            raise RuntimeError("no terminate")
+
+        def kill(self) -> None:
+            self.calls.append(("kill", None))
+            raise RuntimeError("no kill")
+
+        def wait(self, timeout: float | None = None) -> int:
+            self.calls.append(("wait", timeout))
+            return 0
+
+    process = FakeProcess()
+
+    _stop_process(process)
+
+    assert process.calls == [("terminate", None), ("kill", None)]
 
 
 def test_main_daemon_run_returns_error_for_invalid_config(monkeypatch, tmp_path, capsys):

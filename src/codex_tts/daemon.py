@@ -41,47 +41,49 @@ class CodexTTSDaemon:
 
     def handle_request(self, request: dict[str, object]) -> dict[str, object]:
         command = request.get("command")
+        try:
+            if command == "ping":
+                return {"ok": True}
 
-        if command == "ping":
-            return {"ok": True}
+            if command == "register_launch":
+                session = self.session_manager.register_launch(
+                    session_id=str(request["session_id"]),
+                    cwd=str(request["cwd"]),
+                    started_at=int(request["started_at"]),
+                    launcher_pid=_optional_int(request.get("launcher_pid")),
+                    codex_pid=_optional_int(request.get("codex_pid")),
+                )
+                self._known_thread_ids[session.session_id] = {
+                    str(thread_id) for thread_id in request.get("known_thread_ids", [])
+                }
+                return {
+                    "ok": True,
+                    "session": asdict(session),
+                    "snapshot": self._snapshot_payload(),
+                }
 
-        if command == "register_launch":
-            session = self.session_manager.register_launch(
-                session_id=str(request["session_id"]),
-                cwd=str(request["cwd"]),
-                started_at=int(request["started_at"]),
-                launcher_pid=_optional_int(request.get("launcher_pid")),
-                codex_pid=_optional_int(request.get("codex_pid")),
-            )
-            self._known_thread_ids[session.session_id] = {
-                str(thread_id) for thread_id in request.get("known_thread_ids", [])
-            }
-            return {
-                "ok": True,
-                "session": asdict(session),
-                "snapshot": self._snapshot_payload(),
-            }
+            if command == "status":
+                return {"ok": True, "snapshot": self._snapshot_payload()}
 
-        if command == "status":
-            return {"ok": True, "snapshot": self._snapshot_payload()}
+            if command == "set_focus":
+                self.session_manager.set_focus(_optional_str(request.get("session_id")))
+                return {"ok": True, "snapshot": self._snapshot_payload()}
 
-        if command == "set_focus":
-            self.session_manager.set_focus(_optional_str(request.get("session_id")))
-            return {"ok": True, "snapshot": self._snapshot_payload()}
+            if command == "mute_session":
+                session = self.session_manager.set_muted(str(request["session_id"]), muted=True)
+                return {"ok": True, "session": asdict(session), "snapshot": self._snapshot_payload()}
 
-        if command == "mute_session":
-            session = self.session_manager.set_muted(str(request["session_id"]), muted=True)
-            return {"ok": True, "session": asdict(session), "snapshot": self._snapshot_payload()}
+            if command == "unmute_session":
+                session = self.session_manager.set_muted(str(request["session_id"]), muted=False)
+                return {"ok": True, "session": asdict(session), "snapshot": self._snapshot_payload()}
 
-        if command == "unmute_session":
-            session = self.session_manager.set_muted(str(request["session_id"]), muted=False)
-            return {"ok": True, "session": asdict(session), "snapshot": self._snapshot_payload()}
-
-        if command == "set_global_enabled":
-            enabled = bool(request["enabled"])
-            self.session_manager.set_global_enabled(enabled)
-            self.store.save(DaemonSettings(global_enabled=enabled, updated_at=int(time.time())))
-            return {"ok": True, "snapshot": self._snapshot_payload()}
+            if command == "set_global_enabled":
+                enabled = bool(request["enabled"])
+                self.session_manager.set_global_enabled(enabled)
+                self.store.save(DaemonSettings(global_enabled=enabled, updated_at=int(time.time())))
+                return {"ok": True, "snapshot": self._snapshot_payload()}
+        except (KeyError, TypeError, ValueError) as exc:
+            return {"ok": False, "error": _error_message(exc)}
 
         return {"ok": False, "error": f"unknown command: {command}"}
 
@@ -191,3 +193,9 @@ def _process_exists(pid: int) -> bool:
     except OSError as exc:
         return exc.errno == errno.EPERM
     return True
+
+
+def _error_message(exc: Exception) -> str:
+    if exc.args:
+        return str(exc.args[0])
+    return str(exc)
