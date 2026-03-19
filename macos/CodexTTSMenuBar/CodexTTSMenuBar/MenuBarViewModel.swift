@@ -1,64 +1,67 @@
 import Combine
+import Dispatch
 import Foundation
 
 @MainActor
-final class MenuBarViewModel: ObservableObject {
+package final class MenuBarViewModel: ObservableObject {
     @Published private(set) var snapshot: DaemonStatusSnapshot?
-    @Published private(set) var isReachable = false
-    @Published private(set) var errorMessage: String?
+    @Published package private(set) var isReachable = false
+    @Published package private(set) var errorMessage: String?
 
     private let client: CLIClient
+    private let workerQueue = DispatchQueue(label: "CodexTTS.MenuBarViewModel.worker", qos: .utility)
     private var timer: Timer?
+    private var refreshInFlight = false
+    private var hasPendingRefresh = false
+    private var pendingRefreshClearError = true
 
-    init(client: CLIClient = CLIClient()) {
+    package init(client: CLIClient = CLIClient()) {
         self.client = client
         refresh()
         startPolling()
     }
 
-    var sessions: [ManagedSessionSnapshot] {
+    package var sessions: [ManagedSessionSnapshot] {
         snapshot?.sessions ?? []
     }
 
-    var globalEnabled: Bool {
+    package var globalEnabled: Bool {
         snapshot?.globalEnabled ?? false
     }
 
-    var controlsEnabled: Bool {
+    package var controlsEnabled: Bool {
         isReachable && snapshot != nil
     }
 
-    var focusSessionID: String? {
+    package var focusSessionID: String? {
         snapshot?.focusSessionID
     }
 
-    func refresh(clearError: Bool = true) {
-        do {
-            snapshot = try client.fetchStatus()
-            isReachable = true
-            if clearError {
-                errorMessage = nil
-            }
-        } catch {
-            snapshot = nil
-            isReachable = false
-            errorMessage = error.localizedDescription
+    package func refresh(clearError: Bool = true) {
+        if refreshInFlight {
+            hasPendingRefresh = true
+            pendingRefreshClearError = pendingRefreshClearError && clearError
+            return
         }
+        startRefresh(clearError: clearError)
     }
 
-    func focus(sessionID: String) {
+    package func focus(sessionID: String) {
+        let client = self.client
         runCommand {
             try client.focus(sessionID: sessionID)
         }
     }
 
-    func setMuted(sessionID: String, muted: Bool) {
+    package func setMuted(sessionID: String, muted: Bool) {
+        let client = self.client
         runCommand {
             try client.setMuted(sessionID: sessionID, muted: muted)
         }
     }
 
-    func setGlobalEnabled(_ enabled: Bool) {
+    package func setGlobalEnabled(_ enabled: Bool) {
+        let client = self.client
         runCommand {
             try client.setGlobalEnabled(enabled)
         }
@@ -73,13 +76,55 @@ final class MenuBarViewModel: ObservableObject {
         timer?.tolerance = 0.2
     }
 
-    private func runCommand(_ action: () throws -> Void) {
-        do {
-            try action()
-            refresh()
-        } catch {
+    private func runCommand(_ action: @escaping @Sendable () throws -> Void) {
+        workerQueue.async { [weak self] in
+            let result = Result(catching: action)
+            Task { @MainActor in
+                guard let self else {
+                    return
+                }
+                switch result {
+                case .success:
+                    self.refresh()
+                case .failure(let error):
+                    self.errorMessage = error.localizedDescription
+                    self.refresh(clearError: false)
+                }
+            }
+        }
+    }
+
+    private func startRefresh(clearError: Bool) {
+        refreshInFlight = true
+        let client = self.client
+        workerQueue.async { [weak self] in
+            let result = Result(catching: client.fetchStatus)
+            Task { @MainActor in
+                self?.finishRefresh(result, clearError: clearError)
+            }
+        }
+    }
+
+    private func finishRefresh(_ result: Result<DaemonStatusSnapshot, Error>, clearError: Bool) {
+        switch result {
+        case .success(let snapshot):
+            self.snapshot = snapshot
+            isReachable = true
+            if clearError {
+                errorMessage = nil
+            }
+        case .failure(let error):
+            snapshot = nil
+            isReachable = false
             errorMessage = error.localizedDescription
-            refresh(clearError: false)
+        }
+
+        refreshInFlight = false
+        if hasPendingRefresh {
+            let nextClearError = pendingRefreshClearError
+            hasPendingRefresh = false
+            pendingRefreshClearError = true
+            startRefresh(clearError: nextClearError)
         }
     }
 }

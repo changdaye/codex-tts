@@ -114,6 +114,38 @@ def test_main_status_json_prints_daemon_snapshot(monkeypatch, capsys):
     }
 
 
+def test_main_status_returns_clean_error_when_daemon_unavailable(monkeypatch, capsys):
+    monkeypatch.setattr(
+        "codex_tts.cli.call_daemon",
+        lambda path, request: (_ for _ in ()).throw(FileNotFoundError("missing socket")),
+    )
+
+    exit_code = main(["status", "--json"])
+
+    assert exit_code == 1
+    assert capsys.readouterr().err.strip() == "codex-tts: daemon is not running"
+
+
+@pytest.mark.parametrize(
+    ("error", "message"),
+    [
+        (ConnectionRefusedError("refused"), "codex-tts: daemon is not running"),
+        (TimeoutError("timed out"), "codex-tts: daemon did not respond"),
+        (OSError(54, "Connection reset by peer"), "codex-tts: could not reach daemon: Connection reset by peer"),
+    ],
+)
+def test_main_status_maps_daemon_transport_errors(monkeypatch, capsys, error, message):
+    monkeypatch.setattr(
+        "codex_tts.cli.call_daemon",
+        lambda path, request: (_ for _ in ()).throw(error),
+    )
+
+    exit_code = main(["status", "--json"])
+
+    assert exit_code == 1
+    assert capsys.readouterr().err.strip() == message
+
+
 def test_main_status_plain_text_prints_summary(monkeypatch, capsys):
     monkeypatch.setattr(
         "codex_tts.cli.call_daemon",

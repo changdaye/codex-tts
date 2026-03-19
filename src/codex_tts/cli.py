@@ -259,7 +259,17 @@ def _run_daemon_command(argv: list[str]) -> int:
 
 
 def _daemon_request(request: dict[str, object]) -> dict[str, object]:
-    response = call_daemon(daemon_socket_path(), request)
+    try:
+        response = call_daemon(daemon_socket_path(), request)
+    except FileNotFoundError as exc:
+        raise DaemonRequestError("daemon is not running") from exc
+    except ConnectionRefusedError as exc:
+        raise DaemonRequestError("daemon is not running") from exc
+    except TimeoutError as exc:
+        raise DaemonRequestError("daemon did not respond") from exc
+    except OSError as exc:
+        message = exc.strerror or str(exc)
+        raise DaemonRequestError(f"could not reach daemon: {message}") from exc
     if not response.get("ok", False):
         raise DaemonRequestError(str(response.get("error", "daemon request failed")))
     return response

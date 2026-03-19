@@ -1,16 +1,22 @@
 import Foundation
 
-struct CommandOutput: Equatable {
-    let stdout: String
-    let stderr: String
-    let exitCode: Int32
+package struct CommandOutput: Equatable, Sendable {
+    package let stdout: String
+    package let stderr: String
+    package let exitCode: Int32
+
+    package init(stdout: String, stderr: String, exitCode: Int32) {
+        self.stdout = stdout
+        self.stderr = stderr
+        self.exitCode = exitCode
+    }
 }
 
-protocol CLIExecuting {
+package protocol CLIExecuting: Sendable {
     func run(arguments: [String]) throws -> CommandOutput
 }
 
-struct ProcessCLIExecutor: CLIExecuting {
+struct ProcessCLIExecutor: CLIExecuting, @unchecked Sendable {
     let executable: String
     let environment: [String: String]
     let fileManager: FileManager
@@ -125,10 +131,10 @@ enum CLIClientError: LocalizedError {
     }
 }
 
-final class CLIClient {
+package final class CLIClient: @unchecked Sendable {
     private let executor: any CLIExecuting
 
-    init(executor: any CLIExecuting = ProcessCLIExecutor()) {
+    package init(executor: any CLIExecuting = ProcessCLIExecutor()) {
         self.executor = executor
     }
 
@@ -140,7 +146,6 @@ final class CLIClient {
         }
 
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
         guard let data = payload.data(using: .utf8) else {
             throw CLIClientError.invalidStatusJSON(payload)
         }

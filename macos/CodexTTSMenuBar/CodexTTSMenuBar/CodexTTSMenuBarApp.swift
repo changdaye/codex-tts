@@ -1,4 +1,5 @@
 import SwiftUI
+import CodexTTSMenuBarCore
 
 @main
 struct CodexTTSMenuBarApp: App {
