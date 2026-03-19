@@ -4,3 +4,4 @@
 .uv-cache/
 .pip-cache/
 __pycache__/
+*.egg-info/
