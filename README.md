@@ -55,6 +55,14 @@ export PATH="$HOME/.local/bin:$PATH"
 source ~/.zshrc
 ```
 
+如果你后面不想用了，可以卸载这个 launcher：
+
+```bash
+bash scripts/uninstall.sh
+```
+
+这个卸载脚本只会删除 `~/.local/bin/codex-tts`，不会删除仓库目录、虚拟环境或配置文件。
+
 最稳的启动方式是直接从源码运行：
 
 ```bash
