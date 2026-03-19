@@ -7,7 +7,7 @@ from codex_tts.cli import build_codex_command, build_parser, main, merge_config
 from codex_tts.config import AppConfig
 from codex_tts.diagnostics import DebugLogger
 from codex_tts.models import ParsedRolloutEvent, ThreadRecord
-from codex_tts.service import run_session
+from codex_tts.service import emit_speech_for_event, run_session
 from codex_tts.tts import build_backend
 
 
@@ -297,6 +297,25 @@ def test_handle_rollout_events_skips_non_final_policy_rejections(monkeypatch):
 
     handle_rollout_events(FakeWatcher(), policy=__import__("codex_tts.speech_policy", fromlist=["SpeechPolicy"]).SpeechPolicy(), config=AppConfig(verbose=True), logger=DebugLogger(enabled=True))
 
+    assert spoken == []
+
+
+def test_emit_speech_for_event_skips_when_session_gate_disables_speech(monkeypatch):
+    spoken: list[str] = []
+    monkeypatch.setattr(
+        "codex_tts.service.speak_text",
+        lambda text, config: spoken.append(text),
+    )
+
+    did_speak = emit_speech_for_event(
+        ParsedRolloutEvent(kind="final_message", text="reply"),
+        policy=__import__("codex_tts.speech_policy", fromlist=["SpeechPolicy"]).SpeechPolicy(),
+        config=AppConfig(verbose=True),
+        logger=DebugLogger(enabled=True),
+        speech_enabled=False,
+    )
+
+    assert did_speak is False
     assert spoken == []
 
 

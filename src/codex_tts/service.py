@@ -26,18 +26,37 @@ def handle_rollout_events(
     logger: DebugLogger,
 ) -> None:
     for event in watcher.poll():
-        sanitized_text = sanitize_for_speech(event.text)
-        if not sanitized_text.strip():
-            logger.log("sanitized final message was empty; skipping speech")
-            continue
-        spoken_event = ParsedRolloutEvent(kind=event.kind, text=sanitized_text)
-        if not policy.should_speak(spoken_event):
-            logger.log(f"speech policy skipped event kind={spoken_event.kind}")
-            continue
-        try:
-            speak_text(spoken_event.text, config)
-        except Exception as exc:
-            print(f"codex-tts: speech failed: {exc}", file=sys.stderr)
+        emit_speech_for_event(event, policy=policy, config=config, logger=logger)
+
+
+def emit_speech_for_event(
+    event: ParsedRolloutEvent,
+    *,
+    policy: SpeechPolicy,
+    config: AppConfig,
+    logger: DebugLogger,
+    speech_enabled: bool = True,
+) -> bool:
+    sanitized_text = sanitize_for_speech(event.text)
+    if not sanitized_text.strip():
+        logger.log("sanitized final message was empty; skipping speech")
+        return False
+
+    if not speech_enabled:
+        logger.log("speech gate disabled; skipping final message")
+        return False
+
+    spoken_event = ParsedRolloutEvent(kind=event.kind, text=sanitized_text)
+    if not policy.should_speak(spoken_event):
+        logger.log(f"speech policy skipped event kind={spoken_event.kind}")
+        return False
+
+    try:
+        speak_text(spoken_event.text, config)
+    except Exception as exc:
+        print(f"codex-tts: speech failed: {exc}", file=sys.stderr)
+        return False
+    return True
 
 
 def run_session(
