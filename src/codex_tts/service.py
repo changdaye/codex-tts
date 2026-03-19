@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -63,6 +64,9 @@ def run_session(
         final_text = wait_for_final_answer(thread.rollout_path)
         event = ParsedRolloutEvent(kind="final_message", text=final_text)
         if policy.should_speak(event):
-            speak_text(final_text, config)
+            try:
+                speak_text(final_text, config)
+            except Exception as exc:
+                print(f"codex-tts: speech failed: {exc}", file=sys.stderr)
 
     return process.wait()

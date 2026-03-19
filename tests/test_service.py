@@ -70,6 +70,13 @@ class FakeEnvironment:
             cwd=cwd,
         )
 
+    @classmethod
+    def without_matching_thread(cls, tmp_path: Path) -> "FakeEnvironment":
+        fake = cls.create(tmp_path)
+        fake.cwd = tmp_path / "other-workspace"
+        fake.cwd.mkdir()
+        return fake
+
 
 def test_run_session_speaks_final_answer_once(tmp_path, monkeypatch):
     fake = FakeEnvironment.create(tmp_path)
@@ -81,3 +88,25 @@ def test_run_session_speaks_final_answer_once(tmp_path, monkeypatch):
     exit_code = run_session(fake.codex_cmd, fake.config, fake.state_db, fake.home_dir, fake.cwd)
     assert exit_code == 0
     assert spoken == ["final reply"]
+
+
+def test_run_session_skips_speech_when_no_thread_matches(tmp_path, monkeypatch):
+    fake = FakeEnvironment.without_matching_thread(tmp_path)
+    spoken: list[str] = []
+    monkeypatch.setattr(
+        "codex_tts.service.speak_text",
+        lambda text, config: spoken.append(text),
+    )
+    exit_code = run_session(fake.codex_cmd, fake.config, fake.state_db, fake.home_dir, fake.cwd)
+    assert exit_code == 0
+    assert spoken == []
+
+
+def test_run_session_ignores_speech_backend_failures(tmp_path, monkeypatch):
+    fake = FakeEnvironment.create(tmp_path)
+    monkeypatch.setattr(
+        "codex_tts.service.speak_text",
+        lambda text, config: (_ for _ in ()).throw(RuntimeError("speaker failed")),
+    )
+    exit_code = run_session(fake.codex_cmd, fake.config, fake.state_db, fake.home_dir, fake.cwd)
+    assert exit_code == 0
