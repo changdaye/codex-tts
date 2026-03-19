@@ -6,4 +6,5 @@
 __pycache__/
 *.egg-info/
 .coverage
+dist/
 macos/CodexTTSMenuBar/.build/
