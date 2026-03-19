@@ -301,6 +301,19 @@ macos/CodexTTSMenuBar
 swift build --package-path macos/CodexTTSMenuBar
 ```
 
+如果你想直接生成本地可双击打开的 `.app` 包，可以运行：
+
+```bash
+bash scripts/package-menubar-app.sh
+```
+
+生成产物默认在：
+
+```text
+dist/CodexTTS.app
+dist/CodexTTS.app.zip
+```
+
 它目前负责：
 
 - 展示 daemon 是否可达
@@ -308,6 +321,14 @@ swift build --package-path macos/CodexTTSMenuBar
 - 展示当前会话列表
 - 对会话执行 focus / mute / unmute
 - 开关全局播报
+
+使用说明：
+
+- 这是一个菜单栏应用，不会弹出主窗口
+- 双击启动后，请看 macOS 顶部菜单栏右侧图标
+- 第一次使用前，建议先执行 `bash scripts/install.sh`，让 `codex-tts` launcher 落到标准路径
+- 如果 daemon 还没启动，应用会显示断开状态，但不会直接退出
+- 最简单的体验方式是先在终端里运行 `codex-tts daemon run`，再打开这个 menubar app
 
 ## 当前限制
 
@@ -347,6 +368,16 @@ PYTHONPATH=src python -m codex_tts.cli --help
 - `~/.local/bin` 已经加入 `PATH`
 - 当前 shell 已经重新加载过配置，例如 `source ~/.zshrc`
 
+### 双击 app 之后没有窗口
+
+这是预期行为。当前客户端是 `menubar app`，不会弹出主窗口。
+
+请确认：
+
+- 你看的是 macOS 顶部菜单栏右侧，而不是 Dock
+- 已经先执行过 `bash scripts/install.sh`
+- 如果图标显示断开状态，请先在终端运行 `codex-tts daemon run`
+
 ### Codex 有回复，但没有朗读
 
 确认下面几件事：
@@ -383,6 +414,12 @@ python -m pytest -q
 
 ```bash
 swift build --package-path macos/CodexTTSMenuBar
+```
+
+打包本地 `.app`：
+
+```bash
+bash scripts/package-menubar-app.sh
 ```
 
 查看 CLI 帮助：

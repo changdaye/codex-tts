@@ -290,6 +290,19 @@ It is currently shipped as a Swift Package:
 swift build --package-path macos/CodexTTSMenuBar
 ```
 
+If you want a local double-clickable `.app` bundle, run:
+
+```bash
+bash scripts/package-menubar-app.sh
+```
+
+The packaged outputs are written to:
+
+```text
+dist/CodexTTS.app
+dist/CodexTTS.app.zip
+```
+
 The shell can:
 
 - show daemon reachability
@@ -297,6 +310,14 @@ The shell can:
 - list managed sessions
 - focus / mute / unmute sessions
 - toggle global speech
+
+Usage notes:
+
+- This is a menu bar app, not a regular windowed app
+- After launching it, look for the icon on the right side of the macOS menu bar
+- Before first use, run `bash scripts/install.sh` so the `codex-tts` launcher is available in a standard location
+- If the daemon is not running yet, the app stays open but shows a disconnected state
+- The simplest flow is to run `codex-tts daemon run` in a terminal first, then launch the menubar app
 
 ## Spoken Text Sanitization
 
@@ -347,6 +368,16 @@ If you installed the global launcher, confirm:
 - `~/.local/bin` is in `PATH`
 - You reloaded your shell config, for example `source ~/.zshrc`
 
+### Double-clicked the app but no window appeared
+
+That is expected. The current client is a `menubar app`, so it does not open a main window.
+
+Check these first:
+
+- Look at the right side of the macOS menu bar, not the Dock
+- Make sure you already ran `bash scripts/install.sh`
+- If the icon shows a disconnected state, start the daemon first with `codex-tts daemon run`
+
 ### Codex replied, but nothing was spoken
 
 Check these first:
@@ -383,6 +414,12 @@ Build the menubar shell:
 
 ```bash
 swift build --package-path macos/CodexTTSMenuBar
+```
+
+Package a local `.app` bundle:
+
+```bash
+bash scripts/package-menubar-app.sh
 ```
 
 Show CLI help:
