@@ -4,6 +4,16 @@ from pathlib import Path
 from codex_tts.models import ThreadRecord
 
 
+def list_thread_ids(db_path: Path) -> set[str]:
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute("select id from threads").fetchall()
+    finally:
+        conn.close()
+
+    return {row[0] for row in rows}
+
+
 def resolve_active_thread(
     db_path: Path,
     *,
