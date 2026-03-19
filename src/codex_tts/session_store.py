@@ -89,25 +89,28 @@ def build_thread_candidate(
     known_thread_ids: set[str],
     logger: DebugLogger | None = None,
 ) -> ThreadCandidate | None:
-    if thread_id in known_thread_ids:
+    rollout_exists = rollout_path.exists()
+    rollout_mtime = 0
+    has_rollout_activity = False
+    if rollout_exists:
+        stat = rollout_path.stat()
+        rollout_mtime = int(stat.st_mtime)
+        has_rollout_activity = rollout_mtime >= started_at
+    has_recent_activity = created_at >= started_at or updated_at >= started_at or has_rollout_activity
+
+    if thread_id in known_thread_ids and not has_recent_activity:
         if logger is not None:
             logger.log(f"skipping known thread {thread_id}")
         return None
-    if updated_at < started_at and created_at < started_at:
+    if not has_recent_activity:
         if logger is not None:
             logger.log(f"skipping stale thread {thread_id}")
         return None
-
-    rollout_exists = rollout_path.exists()
-    has_activity = False
-    if rollout_exists:
-        stat = rollout_path.stat()
-        has_activity = stat.st_size > 0 or int(stat.st_mtime) >= started_at
     if logger is not None:
         logger.log(
             "candidate "
             f"{thread_id}: rollout_exists={int(rollout_exists)} "
-            f"has_activity={int(has_activity)} "
+            f"has_activity={int(has_recent_activity)} "
             f"updated_at={updated_at} created_at={created_at}"
         )
 
@@ -116,7 +119,7 @@ def build_thread_candidate(
         rollout_path=rollout_path,
         created_at=created_at,
         updated_at=updated_at,
-        score=(int(rollout_exists), int(has_activity)),
+        score=(int(rollout_exists), int(has_recent_activity)),
     )
 
 

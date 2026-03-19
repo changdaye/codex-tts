@@ -1,4 +1,5 @@
 import sqlite3
+import os
 from pathlib import Path
 
 from codex_tts.diagnostics import DebugLogger
@@ -168,8 +169,8 @@ def test_build_thread_candidate_skips_known_thread_and_logs(tmp_path, capsys):
     candidate = build_thread_candidate(
         thread_id="thread-1",
         rollout_path=tmp_path / "rollout.jsonl",
-        created_at=1005,
-        updated_at=1010,
+        created_at=900,
+        updated_at=950,
         started_at=1000,
         known_thread_ids={"thread-1"},
         logger=DebugLogger(enabled=True),
@@ -192,6 +193,44 @@ def test_build_thread_candidate_skips_stale_thread_and_logs(tmp_path, capsys):
 
     assert candidate is None
     assert "codex-tts: skipping stale thread thread-1" in capsys.readouterr().err
+
+
+def test_build_thread_candidate_accepts_stale_db_row_when_rollout_has_new_activity(tmp_path):
+    rollout_path = tmp_path / "rollout.jsonl"
+    rollout_path.write_text('{"event":"recent"}\n', encoding="utf-8")
+    started_at = 1000
+    os.utime(rollout_path, (started_at + 5, started_at + 5))
+
+    candidate = build_thread_candidate(
+        thread_id="thread-1",
+        rollout_path=rollout_path,
+        created_at=900,
+        updated_at=950,
+        started_at=started_at,
+        known_thread_ids=set(),
+    )
+
+    assert candidate is not None
+    assert candidate.thread_id == "thread-1"
+    assert candidate.score == (1, 1)
+
+
+def test_build_thread_candidate_accepts_known_thread_when_it_has_post_start_activity(tmp_path):
+    rollout_path = tmp_path / "rollout.jsonl"
+    rollout_path.write_text('{"event":"recent"}\n', encoding="utf-8")
+
+    candidate = build_thread_candidate(
+        thread_id="thread-1",
+        rollout_path=rollout_path,
+        created_at=900,
+        updated_at=1005,
+        started_at=1000,
+        known_thread_ids={"thread-1"},
+    )
+
+    assert candidate is not None
+    assert candidate.thread_id == "thread-1"
+    assert candidate.score == (1, 1)
 
 
 def test_candidate_sort_key_orders_by_score_then_timestamps():

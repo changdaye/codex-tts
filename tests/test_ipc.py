@@ -52,6 +52,12 @@ def test_json_socket_server_requires_start_before_handling_requests(tmp_path):
         server.handle_next_request()
 
 
+def test_socket_bind_path_keeps_short_socket_paths():
+    socket_path = Path("/tmp/codex-tts-short.sock")
+
+    assert _socket_bind_path(socket_path) == socket_path
+
+
 def test_read_json_line_raises_when_socket_closes_before_newline():
     left, right = socket.socketpair()
     try:

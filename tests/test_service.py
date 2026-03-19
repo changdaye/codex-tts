@@ -125,6 +125,10 @@ def test_main_invokes_service_with_loaded_config(monkeypatch, tmp_path):
     config_path.write_text("", encoding="utf-8")
     monkeypatch.setattr("codex_tts.cli.shutil.which", lambda name: "/usr/local/bin/codex")
     monkeypatch.setattr(
+        "codex_tts.cli.call_daemon",
+        lambda path, request: (_ for _ in ()).throw(FileNotFoundError("missing socket")),
+    )
+    monkeypatch.setattr(
         "codex_tts.cli.load_config",
         lambda path: AppConfig() if path == config_path else None,
     )
@@ -156,6 +160,10 @@ def test_main_invokes_service_with_preset_override(monkeypatch, tmp_path):
     config_path = tmp_path / "config.toml"
     config_path.write_text("", encoding="utf-8")
     monkeypatch.setattr("codex_tts.cli.shutil.which", lambda name: "/usr/local/bin/codex")
+    monkeypatch.setattr(
+        "codex_tts.cli.call_daemon",
+        lambda path, request: (_ for _ in ()).throw(FileNotFoundError("missing socket")),
+    )
     monkeypatch.setattr(
         "codex_tts.cli.load_config",
         lambda path: AppConfig(rate=180) if path == config_path else None,
