@@ -33,6 +33,30 @@ def test_load_config_rejects_non_positive_rate(tmp_path):
         raise AssertionError("expected load_config to reject a non-positive rate")
 
 
+def test_load_config_rejects_boolean_rate(tmp_path):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("rate = true\n", encoding="utf-8")
+
+    try:
+        load_config(config_path)
+    except ValueError as exc:
+        assert str(exc) == "rate must be greater than 0"
+    else:
+        raise AssertionError("expected load_config to reject a boolean rate")
+
+
+def test_load_config_rejects_non_numeric_rate(tmp_path):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text('rate = "fast"\n', encoding="utf-8")
+
+    try:
+        load_config(config_path)
+    except ValueError as exc:
+        assert str(exc) == "rate must be greater than 0"
+    else:
+        raise AssertionError("expected load_config to reject a non-numeric rate")
+
+
 def test_load_config_rejects_empty_voice(tmp_path):
     config_path = tmp_path / "config.toml"
     config_path.write_text('voice = "   "\n', encoding="utf-8")
@@ -55,6 +79,30 @@ def test_load_config_rejects_unsupported_speak_phase(tmp_path):
         assert str(exc) == "speak_phase must be one of: final_only"
     else:
         raise AssertionError("expected load_config to reject an unsupported speak_phase")
+
+
+def test_load_config_rejects_non_string_backend(tmp_path):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("backend = 3\n", encoding="utf-8")
+
+    try:
+        load_config(config_path)
+    except ValueError as exc:
+        assert str(exc) == "backend must not be empty"
+    else:
+        raise AssertionError("expected load_config to reject a non-string backend")
+
+
+def test_load_config_rejects_non_boolean_verbose(tmp_path):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text('verbose = "yes"\n', encoding="utf-8")
+
+    try:
+        load_config(config_path)
+    except ValueError as exc:
+        assert str(exc) == "verbose must be true or false"
+    else:
+        raise AssertionError("expected load_config to reject a non-boolean verbose flag")
 
 
 def test_load_config_normalizes_voice_and_verbose_flag(tmp_path):

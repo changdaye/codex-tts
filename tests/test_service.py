@@ -5,6 +5,8 @@ from pathlib import Path
 
 from codex_tts.cli import build_codex_command, build_parser, main, merge_config
 from codex_tts.config import AppConfig
+from codex_tts.diagnostics import DebugLogger
+from codex_tts.models import ParsedRolloutEvent, ThreadRecord
 from codex_tts.service import run_session
 from codex_tts.tts import build_backend
 
@@ -66,6 +68,22 @@ def test_parser_accepts_verbose_flag():
 def test_build_backend_returns_say_backend():
     backend = build_backend("say")
     assert backend.__class__.__name__ == "SayBackend"
+
+
+def test_speak_text_uses_selected_backend(monkeypatch):
+    calls = []
+
+    class FakeBackend:
+        def speak(self, text, *, voice, rate):
+            calls.append((text, voice, rate))
+
+    monkeypatch.setattr("codex_tts.service.build_backend", lambda name: FakeBackend())
+
+    from codex_tts.service import speak_text
+
+    speak_text("done", AppConfig(voice="Mei-Jia", rate=240))
+
+    assert calls == [("done", "Mei-Jia", 240)]
 
 
 def test_build_codex_command_prefixes_real_codex_binary():
@@ -264,6 +282,24 @@ def test_run_session_speaks_final_answer_once(tmp_path, monkeypatch):
     assert spoken == ["final reply"]
 
 
+def test_handle_rollout_events_skips_non_final_policy_rejections(monkeypatch):
+    class FakeWatcher:
+        def poll(self):
+            return [ParsedRolloutEvent(kind="ignored", text="not final")]
+
+    spoken: list[str] = []
+    monkeypatch.setattr(
+        "codex_tts.service.speak_text",
+        lambda text, config: spoken.append(text),
+    )
+
+    from codex_tts.service import handle_rollout_events
+
+    handle_rollout_events(FakeWatcher(), policy=__import__("codex_tts.speech_policy", fromlist=["SpeechPolicy"]).SpeechPolicy(), config=AppConfig(verbose=True), logger=DebugLogger(enabled=True))
+
+    assert spoken == []
+
+
 def test_run_session_speaks_sanitized_final_answer(tmp_path, monkeypatch):
     fake = FakeEnvironment.create(
         tmp_path,
@@ -425,3 +461,38 @@ def test_run_session_speaks_each_new_final_answer(tmp_path, monkeypatch):
 
     assert exit_code == 0
     assert spoken == ["first reply", "second reply"]
+
+
+def test_run_session_attaches_watcher_after_process_exit_when_thread_appears_late(tmp_path, monkeypatch):
+    fake = FakeEnvironment.create(tmp_path)
+    spoken: list[str] = []
+    thread = ThreadRecord(
+        thread_id="late-thread",
+        rollout_path=tmp_path / "late-rollout.jsonl",
+        created_at=1001,
+        updated_at=1002,
+    )
+
+    class FakeProcess:
+        def poll(self):
+            return 0
+
+    class FakeWatcher:
+        def __init__(self, path):
+            self.path = path
+
+        def poll(self):
+            return [ParsedRolloutEvent(kind="final_message", text="late reply")]
+
+    resolve_results = iter([None, thread])
+
+    monkeypatch.setattr("codex_tts.service.list_thread_ids", lambda path: set())
+    monkeypatch.setattr("codex_tts.service.subprocess.Popen", lambda *args, **kwargs: FakeProcess())
+    monkeypatch.setattr("codex_tts.service.resolve_active_thread", lambda *args, **kwargs: next(resolve_results))
+    monkeypatch.setattr("codex_tts.service.FinalAnswerWatcher", FakeWatcher)
+    monkeypatch.setattr("codex_tts.service.speak_text", lambda text, config: spoken.append(text))
+
+    exit_code = run_session(["codex"], AppConfig(verbose=True), fake.state_db, fake.home_dir, fake.cwd)
+
+    assert exit_code == 0
+    assert spoken == ["late reply"]
