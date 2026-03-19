@@ -225,6 +225,40 @@ def test_run_session_speaks_final_answer_once(tmp_path, monkeypatch):
     assert spoken == ["final reply"]
 
 
+def test_run_session_speaks_sanitized_final_answer(tmp_path, monkeypatch):
+    fake = FakeEnvironment.create(
+        tmp_path,
+        final_text="Read [the docs](https://example.com/docs). More info: https://openai.com/test",
+    )
+    spoken: list[str] = []
+    monkeypatch.setattr(
+        "codex_tts.service.speak_text",
+        lambda text, config: spoken.append(text),
+    )
+
+    exit_code = run_session(fake.codex_cmd, fake.config, fake.state_db, fake.home_dir, fake.cwd)
+
+    assert exit_code == 0
+    assert spoken == ["Read the docs. More info:"]
+
+
+def test_run_session_skips_speech_when_sanitized_text_is_empty(tmp_path, monkeypatch):
+    fake = FakeEnvironment.create(
+        tmp_path,
+        final_text="https://example.com/docs",
+    )
+    spoken: list[str] = []
+    monkeypatch.setattr(
+        "codex_tts.service.speak_text",
+        lambda text, config: spoken.append(text),
+    )
+
+    exit_code = run_session(fake.codex_cmd, fake.config, fake.state_db, fake.home_dir, fake.cwd)
+
+    assert exit_code == 0
+    assert spoken == []
+
+
 def test_run_session_skips_speech_when_no_thread_matches(tmp_path, monkeypatch):
     fake = FakeEnvironment.without_matching_thread(tmp_path)
     spoken: list[str] = []

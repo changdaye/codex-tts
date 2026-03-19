@@ -5,7 +5,9 @@ import time
 from pathlib import Path
 
 from codex_tts.config import AppConfig
+from codex_tts.models import ParsedRolloutEvent
 from codex_tts.rollout import FinalAnswerWatcher
+from codex_tts.speech_text import sanitize_for_speech
 from codex_tts.session_store import list_thread_ids, resolve_active_thread
 from codex_tts.speech_policy import SpeechPolicy
 from codex_tts.tts import build_backend
@@ -22,10 +24,14 @@ def handle_rollout_events(
     config: AppConfig,
 ) -> None:
     for event in watcher.poll():
-        if not policy.should_speak(event):
+        spoken_event = ParsedRolloutEvent(
+            kind=event.kind,
+            text=sanitize_for_speech(event.text),
+        )
+        if not policy.should_speak(spoken_event):
             continue
         try:
-            speak_text(event.text, config)
+            speak_text(spoken_event.text, config)
         except Exception as exc:
             print(f"codex-tts: speech failed: {exc}", file=sys.stderr)
 
